@@ -2,3 +2,7 @@
 .DS_Store
 .env
 *.key
+*.pem
+*.hex
+*.json
+.idea
