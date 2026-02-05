@@ -138,32 +138,14 @@ impl QdrantPointData {
         let mut question_vector = String::with_capacity(
             payload.question.len() + payload.outcome.len() + payload.market_category.len() + 32,
         );
+
+        question_vector.push_str("Question: ");
         question_vector.push_str(&payload.question);
-        let cleaned_outcome = payload.outcome.replace('\\', "");
-
-        if !payload.question.ends_with('?') && !payload.question.ends_with('.') {
-            println!("foud a question without ? or .");
-            question_vector.push_str(". ");
-            question_vector.push_str(&cleaned_outcome);
-            question_vector.push_str(" (");
-            question_vector.push_str(&payload.market_category);
-
-            if !payload.market_subcategory.is_empty() {
-                question_vector.push(':');
-                question_vector.push_str(&payload.market_subcategory);
-            }
-
-            question_vector.push(')');
-            return Ok(Self {
-                id: payload.uuid.clone(),
-                question_vector,
-                payload,
-            });
-        }
 
         question_vector.push(' ');
-        question_vector.push_str(&cleaned_outcome);
-        question_vector.push_str(" (");
+        question_vector.push_str("Outcomes: ");
+        question_vector.push_str(&payload.outcome);
+        question_vector.push_str(" Category: (");
         question_vector.push_str(&payload.market_category);
 
         if !payload.market_subcategory.is_empty() {
@@ -172,7 +154,7 @@ impl QdrantPointData {
         }
         question_vector.push(')');
 
-        println!("{question_vector}");
+        println!("question vector --> {question_vector}:{}", payload.platform);
         Ok(Self {
             id: payload.uuid.clone(),
             question_vector,
@@ -181,13 +163,16 @@ impl QdrantPointData {
     }
 
     pub fn new_many(payloads: impl IntoIterator<Item = QdrantPayload>) -> Result<Vec<Self>> {
-        payloads
+        Ok(payloads
             .into_iter()
-            .map(|payload| {
-                let point = Self::new(payload)?;
-                Ok(point)
+            .filter_map(|payload| match Self::new(payload) {
+                std::result::Result::Ok(point) => Some(point),
+                Err(e) => {
+                    tracing::error!("{e}");
+                    None
+                }
             })
-            .collect()
+            .collect())
     }
 
     pub fn get_id(&self) -> &str {
@@ -215,10 +200,18 @@ impl QdrantPointData {
             !payload.outcome.trim().is_empty(),
             "outcome cannot be empty"
         );
+
         ensure!(
-            !payload.clob_token_ids.trim().is_empty(),
-            "clobTokenIds cannot be empty"
+            !payload.platform.trim().is_empty(),
+            "platform cannot be empty"
         );
+
+        if payload.platform == "polymarket" {
+            ensure!(
+                !payload.clob_token_ids.trim().is_empty(),
+                "clobTokenIds cannot be empty"
+            );
+        }
         ensure!(
             !payload.description.trim().is_empty(),
             "description cannot be empty"
@@ -231,12 +224,23 @@ impl QdrantPointData {
             !payload.market_category.trim().is_empty(),
             "market_category cannot be empty"
         );
-        ensure!(
-            !payload.platform.trim().is_empty(),
-            "platform cannot be empty"
-        );
+
         Ok(())
     }
+}
+
+pub trait QdrantMarketConverter<T> {
+    fn from_market(
+        value: T,
+        category: impl Into<String>,
+        subcategory: impl Into<String>,
+    ) -> QdrantPayload;
+
+    fn from_markets(
+        values: Vec<T>,
+        category: impl Into<String>,
+        subcategory: impl Into<String>,
+    ) -> Vec<QdrantPayload>;
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -257,7 +261,7 @@ pub struct QdrantPayload {
 
 impl From<PolymarketUsefulData> for QdrantPayload {
     fn from(value: PolymarketUsefulData) -> Self {
-        QdrantPayload {
+        Self {
             uuid: Uuid::new_v4().to_string(),
             question: value.question.unwrap_or_default(),
             outcome: value.outcomes.unwrap_or_default(),
@@ -274,48 +278,129 @@ impl From<PolymarketUsefulData> for QdrantPayload {
 
 impl From<gamma::Market> for QdrantPayload {
     fn from(value: gamma::Market) -> Self {
-        QdrantPayload {
+        Self {
             uuid: Uuid::new_v4().to_string(),
-            question: value.question.unwrap_or_default(),
-            outcome: value.outcomes.unwrap_or_default(),
+            question: {
+                let q = value.question.unwrap_or_default();
+                if q.ends_with(|c| c == '?' || c == '.') {
+                    q
+                } else {
+                    format!("{q}.")
+                }
+            },
+            outcome: value.outcomes.unwrap_or_default().replace('\\', ""),
             clob_token_ids: value.clob_token_ids.unwrap_or_default(),
             description: value.description.unwrap_or_default(),
             condition_id: value.condition_id.unwrap_or_default(),
             market_category: String::new(),
             market_subcategory: String::new(),
-            platform: String::new(),
+            platform: "polymarket".to_string(),
             end_date: value.end_date_iso.or(value.end_date).unwrap_or_default(),
         }
     }
 }
 
-impl QdrantPayload {
-    pub fn from_market(
+impl From<kalshi_rs::markets::models::Market> for QdrantPayload {
+    fn from(value: kalshi_rs::markets::models::Market) -> Self {
+        Self {
+            uuid: Uuid::new_v4().to_string(),
+            question: {
+                let q = if value.subtitle.trim().is_empty() {
+                    value.title.trim().to_string()
+                } else {
+                    format!("{} {}", value.title.trim(), value.subtitle.trim())
+                };
+
+                if q.ends_with(['?', '.']) {
+                    q
+                } else {
+                    format!("{q}.")
+                }
+            },
+            outcome: {
+                let mut outcome = String::new();
+                outcome.push_str("[Yes(");
+                outcome.push_str(value.yes_sub_title.as_str().trim());
+                outcome.push_str(") : No(Not ");
+                outcome.push_str(value.no_sub_title.as_str().trim());
+                outcome.push_str(")]");
+                outcome
+            },
+            condition_id: value.ticker,
+            description: {
+                if value.rules_secondary.is_empty() {
+                    value.rules_primary.clone()
+                } else if value.rules_primary.ends_with('.') {
+                    format!("{} {}", value.rules_primary, value.rules_secondary)
+                } else {
+                    format!("{}. {}", value.rules_primary, value.rules_secondary)
+                }
+            },
+            clob_token_ids: String::new(),
+            market_category: String::new(),
+            market_subcategory: String::new(),
+            platform: "kalshi".to_string(),
+            end_date: value.close_time,
+        }
+    }
+}
+
+impl QdrantMarketConverter<gamma::Market> for QdrantPayload {
+    fn from_market(
         value: gamma::Market,
-        market_category: String,
-        market_subcategory: String,
+        market_category: impl Into<String>,
+        market_subcategory: impl Into<String>,
     ) -> Self {
         let mut v: Self = value.into();
-        v.platform = "Polymarket".to_string();
-        v.market_category = market_category;
-        v.market_subcategory = market_subcategory;
+        v.market_category = market_category.into();
+        v.market_subcategory = market_subcategory.into();
         v
     }
 
-    pub fn from_markets(
+    fn from_markets(
         values: Vec<gamma::Market>,
-        market_category: &str,
-        market_subcategory: &str,
+        market_category: impl Into<String>,
+        market_subcategory: impl Into<String>,
     ) -> Vec<Self> {
-        let category = market_category.to_string();
-        let subcategory = market_subcategory.to_string();
-        let platform = "Polymarket".to_string();
+        let category = market_category.into();
+        let subcategory = market_subcategory.into();
 
         values
             .into_iter()
             .map(|value| {
                 let mut data: Self = value.into();
-                data.platform = platform.clone();
+                data.market_category = category.clone();
+                data.market_subcategory = subcategory.clone();
+                data
+            })
+            .collect()
+    }
+}
+
+impl QdrantMarketConverter<kalshi_rs::markets::models::Market> for QdrantPayload {
+    fn from_market(
+        value: kalshi_rs::markets::models::Market,
+        market_category: impl Into<String>,
+        market_subcategory: impl Into<String>,
+    ) -> Self {
+        let mut v: Self = value.into();
+        v.market_category = market_category.into();
+        v.market_subcategory = market_subcategory.into();
+        v
+    }
+
+    fn from_markets(
+        values: Vec<kalshi_rs::markets::models::Market>,
+        market_category: impl Into<String>,
+        market_subcategory: impl Into<String>,
+    ) -> Vec<Self> {
+        let category = market_category.into();
+        let subcategory = market_subcategory.into();
+
+        values
+            .into_iter()
+            .map(|value| {
+                let mut data: Self = value.into();
                 data.market_category = category.clone();
                 data.market_subcategory = subcategory.clone();
                 data
@@ -355,5 +440,54 @@ impl Platform {
 
     pub fn other_platform_names(self) -> Vec<&'static str> {
         self.others().into_iter().map(|p| p.as_str()).collect()
+    }
+}
+
+pub enum MarketTag {
+    EPL,
+    NBA,
+    NFL,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct MarketTagInfo {
+    pub polymarket_identifier: &'static str,
+    pub kalshi_identifier: &'static str,
+    pub category: &'static str,
+    pub subcategory: &'static str,
+}
+
+impl std::fmt::Display for MarketTagInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}_{}_{}",
+            self.category, self.subcategory, self.polymarket_identifier
+        )
+    }
+}
+
+impl MarketTag {
+    pub fn info(&self) -> MarketTagInfo {
+        match self {
+            Self::EPL => MarketTagInfo {
+                polymarket_identifier: "306",
+                kalshi_identifier: "Soccer",
+                category: "sport",
+                subcategory: "EPL",
+            },
+            Self::NBA => MarketTagInfo {
+                polymarket_identifier: "745",
+                kalshi_identifier: "Basketball",
+                category: "sport",
+                subcategory: "NBA",
+            },
+            Self::NFL => MarketTagInfo {
+                polymarket_identifier: "450",
+                kalshi_identifier: "Football",
+                category: "sport",
+                subcategory: "NFL",
+            },
+        }
     }
 }

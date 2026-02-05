@@ -1,29 +1,30 @@
 use crate::models;
+use crate::models::QdrantMarketConverter;
 use crate::qdrant;
 use alloy::{hex, signers::local::PrivateKeySigner};
-use anyhow::{Ok, Result};
+use anyhow::{Context, Ok, Result};
 use chrono::{Duration as ChronoDuration, SecondsFormat, Utc};
 use polymarket_hft::client::polymarket::{clob, clob::ws::WsMessage, gamma};
-use std::fs as std_fs;
-use std::io::Write;
 use std::{fs, path::Path, time::Duration};
-use tokio::io::{AsyncWriteExt, BufWriter as tokio_bufWriter};
-use tokio::{self, fs as tokio_fs};
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 const PRIVATE_KEY_FILE: &str = "privateKey.hex";
 use serde::{Deserialize, Serialize};
 
-pub struct PolymarketClient {
+#[derive(Clone)]
+pub struct MyPolymarketClient {
     gamma_client: gamma::Client,
-    clob_client: clob::ws::ClobWsClient,
+    clob_ws_client: clob::ws::ClobWsClient,
     qdrant_client: qdrant::VectorStore,
 }
 
-impl PolymarketClient {
+impl MyPolymarketClient {
     pub fn new(qdrant_client: qdrant::VectorStore) -> Self {
+        tracing::debug!("MyPolymarketClient setupped");
+
         Self {
             gamma_client: gamma::Client::new(),
-            clob_client: clob::ws::ClobWsClient::new(),
+            clob_ws_client: clob::ws::ClobWsClient::new(),
             qdrant_client,
         }
     }
@@ -32,84 +33,140 @@ impl PolymarketClient {
         let signer = get_signer()?;
 
         println!("address is - {}", signer.address());
-        self.clob_client.subscribe_market(vec![], true).await?;
+        self.clob_ws_client.subscribe_market(vec![], true).await?;
 
-        let duration = Duration::from_mins(2);
+        let duration = Duration::from_mins(5);
         let mut five_minute_ticker = tokio::time::interval(duration);
+        let mut ws_is_alive = true;
         loop {
             tokio::select! {
-                // biased;
+                biased;
                 _ = shutdown.cancelled() => {
-                    println!("received shutdown");
-                    self.clob_client.disconnect().await;
+                    tracing::trace!("polymarket received shutdown");
+                    self.clob_ws_client.disconnect().await;
                     break;
                 }
 
                 _ = five_minute_ticker.tick() => {
-                    println!("another five seconds");
-                    let ll = self.poll_polymarket_historical_data(duration.as_secs(), MarketTag::EPL).await;
+                    println!("another five minutes: polymarket");
                 }
 
-                msg = self.clob_client.next_message() => {
+                msg = self.clob_ws_client.next_message(), if ws_is_alive => {
                     match msg {
                         Some(msg) => {
-                            if let Err(e) = self.handle_polymarket_message(msg).await {
-                                tracing::error!("error from fn handle_polymarket_message: {e}");
+                            if let Err(e) = self.handle_polymarket_wss_message(msg).await {
+                                tracing::error!("error from fn wss handler: {e}");
                             }
                         }
 
                         None => {
-                            println!("polymarket WS connection ended");
+                            tracing::error!("polymarket WS connection was ended");
+                            ws_is_alive = false;
                         }
                     }
                 }
             }
         }
 
+        tracing::debug!("polymarket live mode is shutting down");
         Ok(())
     }
 
-    async fn handle_polymarket_message(&self, msg: WsMessage) -> Result<()> {
+    async fn handle_polymarket_wss_message(&self, msg: WsMessage) -> Result<()> {
         match msg {
             clob::ws::WsMessage::NewMarket(msg) => {
-                let result = self
+                let value = self
                     .gamma_client
                     .get_market_by_id(msg.id.as_str(), Some(true))
                     .await?;
-                let json = serde_json::to_string_pretty(&result)?;
-                let mut file = std_fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open("polymarketNewEvent.ndjson")?;
-                writeln!(file, "{json}")?;
+
+                let Some(ref tags) = value.tags else {
+                    anyhow::bail!("tags are missing")
+                };
+
+                let market = Self::sort_polymarket_tags(tags)?;
+
+                let payload = models::QdrantPayload::from_market(
+                    value,
+                    market.info().category,
+                    market.info().subcategory,
+                );
+
+                let data = models::QdrantPointData::new(payload)?;
+                let (point_struct, _) = self.qdrant_client.create_point(data).await?;
+
+                self.qdrant_client.insert(point_struct).await?
             }
 
             other => {
-                println!("other Polymarket message: {:#?}\n", other);
+                anyhow::bail!("other Polymarket message: {:#?}\n", other)
             }
         }
 
         Ok(())
     }
 
-    pub async fn poll_polymarket_historical_data(
+    fn sort_polymarket_tags(tags: &[gamma::Tag]) -> Result<models::MarketTag> {
+        for tag in tags {
+            match tag.id.as_str().trim() {
+                id if id == models::MarketTag::EPL.info().polymarket_identifier => {
+                    return Ok(models::MarketTag::EPL);
+                }
+                id if id == models::MarketTag::NBA.info().polymarket_identifier => {
+                    return Ok(models::MarketTag::NBA);
+                }
+                id if id == models::MarketTag::NFL.info().polymarket_identifier => {
+                    return Ok(models::MarketTag::NFL);
+                }
+                _ => {}
+            }
+        }
+
+        anyhow::bail!("no supported tag found")
+    }
+
+    async fn backfill_polymarket_sport_history(&self) -> Result<()> {
+        let duration = Duration::from_hours(24 * 5); // past 5 days
+        let tags = [
+            models::MarketTag::EPL,
+            models::MarketTag::NBA,
+            models::MarketTag::NFL,
+        ];
+
+        let mut join_set = JoinSet::new();
+
+        for tag in tags {
+            let client = self.clone();
+            let duration_secs = duration.as_secs();
+
+            join_set.spawn(async move { client.resolve_past_sport(duration_secs, tag).await });
+        }
+
+        while let Some(res) = join_set.join_next().await {
+            match res {
+                std::result::Result::Ok(std::result::Result::Ok(())) => {}
+                std::result::Result::Ok(std::result::Result::Err(e)) => {
+                    tracing::error!("backfill failed: {e:?}")
+                }
+                std::result::Result::Err(join_err) => {
+                    tracing::error!("task panicked: {join_err:?}")
+                }
+            }
+        }
+
+        tracing::info!("polymarket backfill completed, entering live mode");
+        Ok(())
+    }
+
+    async fn resolve_past_sport(
         &self,
         seconds_duration: u64,
-        market: MarketTag,
+        market: models::MarketTag,
     ) -> Result<()> {
-        // let file = tokio_fs::OpenOptions::new()
-        //     .create(true)
-        //     .append(true)
-        //     .open("PolymarketSportEPL.ndjson")
-        //     .await?;
-        // let mut writer = tokio_bufWriter::with_capacity(64 * 1024, file);
-
         let time_diff = Utc::now() - ChronoDuration::seconds(seconds_duration as i64);
         let formatted_iso = time_diff.to_rfc3339_opts(SecondsFormat::Secs, true);
 
         let (mut offset, limit): (usize, usize) = (0, 100);
-        let (mut count, mut num) = (0, 0);
-        println!("number of count, {:?}", count);
 
         let mut container = Vec::with_capacity(limit);
         loop {
@@ -118,7 +175,7 @@ impl PolymarketClient {
                 .get_markets(gamma::GetMarketsRequest {
                     limit: Some(limit as u32),
                     offset: Some(offset as u32),
-                    tag_id: Some(market.info().tag_id),
+                    tag_id: Some(market.info().polymarket_identifier),
                     closed: Some(false),
                     ascending: Some(false),
                     related_tags: Some(true),
@@ -131,26 +188,10 @@ impl PolymarketClient {
                 .await?;
 
             let market_len = markets.len();
-            println!("len of market, {:?}", market_len);
-            if market_len == 0 {
-                println!("exiting loop, market_len is zero");
-                break;
-            }
-
             container.extend(markets);
-            // for market in markets {
-            // let json = serde_json::to_string(&market)?;
-            // writer.write_all(json.as_bytes()).await?;
-            // writer.write_all(b"\n").await?;
-            // }
-
-            count += 1;
-            num += market_len;
-            println!("number of count/num, {}/{}", count, num);
 
             offset += limit;
             if market_len < limit {
-                println!("exiting loop, market_len is less than limit");
                 break;
             }
         }
@@ -166,52 +207,15 @@ impl PolymarketClient {
 
         let point_structs = result.into_iter().map(|(point, _)| point).collect();
         self.qdrant_client.insert_many(point_structs, 100).await
-
-        // writer.flush().await?;
-        // writer.get_ref().sync_all().await?;
-        // Ok(())
     }
-}
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "UPPERCASE")]
-pub enum MarketTag {
-    EPL,
-    NBA,
-    NFL,
-}
+    pub async fn backfill_polymarket_history(&self) -> Result<()> {
+        self.backfill_polymarket_sport_history()
+            .await
+            .context("kalshi sport backfill failed")?;
 
-pub struct MarketTagInfo {
-    pub tag_id: &'static str,
-    pub category: &'static str,
-    pub subcategory: &'static str,
-}
-
-impl MarketTag {
-    pub fn info(&self) -> MarketTagInfo {
-        match self {
-            Self::EPL => MarketTagInfo {
-                tag_id: "306",
-                category: "sport",
-                subcategory: "EPL",
-            },
-            Self::NBA => MarketTagInfo {
-                tag_id: "745",
-                category: "sport",
-                subcategory: "NBA",
-            },
-            Self::NFL => MarketTagInfo {
-                tag_id: "450",
-                category: "crypto",
-                subcategory: "NFL",
-            },
-        }
-    }
-}
-impl std::fmt::Display for MarketTag {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let info = self.info();
-        write!(f, "{}_{}_{}", info.category, info.subcategory, info.tag_id)
+        // others in the future
+        Ok(())
     }
 }
 

@@ -1,3 +1,4 @@
+use crate::constants;
 use crate::models;
 use crate::models::QdrantPointData;
 use anyhow::{Context, Ok, Result};
@@ -5,8 +6,8 @@ use candle_core::Device;
 use qdrant_client::{
     Payload, Qdrant,
     qdrant::{
-         CreateCollectionBuilder, CreateFieldIndexCollectionBuilder, DeletePointsBuilder,
-        FieldType, Filter, HnswConfigDiffBuilder, PointId, PointStruct, PointsIdsList, Query,
+        CreateCollectionBuilder, CreateFieldIndexCollectionBuilder, DeletePointsBuilder, FieldType,
+        Filter, HnswConfigDiffBuilder, PointId, PointStruct, PointsIdsList, Query,
         QueryBatchPointsBuilder, QueryBatchResponse, QueryPoints, QueryPointsBuilder,
         QueryResponse, UpdateCollectionBuilder, UpsertPointsBuilder, VectorInput,
         VectorParamsBuilder,
@@ -32,11 +33,16 @@ impl VectorStore {
         let device =
             candle_core::Device::new_metal(0).context("metal device initialization failed")?;
 
-        Self::new(url, collection_name, device).await
+        let vs = Self::new(url, collection_name, device).await?;
+        tracing::debug!("succesfully setup vector store");
+        Ok(vs)
     }
 
     async fn new(url: &str, collection_name: &'static str, device: Device) -> Result<Self> {
-        let client = Qdrant::from_url(url).build()?;
+        let client = Qdrant::from_url(url)
+            .skip_compatibility_check()
+            .build()
+            .context("error building qdrant config")?;
 
         if !client.collection_exists(collection_name).await? {
             client
@@ -45,7 +51,8 @@ impl VectorStore {
                         VectorParamsBuilder::new(384, qdrant_client::qdrant::Distance::Cosine),
                     ),
                 )
-                .await?;
+                .await
+                .context("error creating new qdrant collection")?;
         }
 
         let model = SentenceTransformerBuilder::with_sentence_transformer(&Which::AllMiniLML6v2)
@@ -88,6 +95,7 @@ impl VectorStore {
             .await
             .context("failed to enable HNSW indexing")?;
 
+        tracing::debug!("payload-index enabled");
         Ok(())
     }
 
@@ -168,7 +176,6 @@ impl VectorStore {
             return Ok(());
         }
 
-        let len = point_structs.len();
         let chunk_size = if chunk_size < 1_000 {
             1_000
         } else {
@@ -237,6 +244,28 @@ impl VectorStore {
             )
             .await?;
 
+        Ok(())
+    }
+
+    pub async fn setup_qdrant_payload_index(&self) -> Result<()> {
+        use constants::*;
+        self.index_payload(FIELD_UUID, FieldType::Uuid)
+            .await
+            .context(format!("qdrant index error on {}", FIELD_UUID))?;
+        self.index_payload(FIELD_MARKET_CATEGORY, FieldType::Keyword)
+            .await
+            .context(format!("qdrant index error on {}", FIELD_MARKET_CATEGORY))?;
+        self.index_payload(FIELD_PLATFORM, FieldType::Keyword)
+            .await
+            .context(format!("qdrant index error on {}", FIELD_PLATFORM))?;
+        self.index_payload(FIELD_MARKET_SUBCATEGORY, FieldType::Keyword)
+            .await
+            .context(format!("qdrant index error on {}", FIELD_MARKET_CATEGORY))?;
+        self.index_payload(FIELD_END_DATE, FieldType::Datetime)
+            .await
+            .context(format!("qdrant index error on {}", FIELD_END_DATE))?;
+
+        tracing::debug!("payload index setup succesfully");
         Ok(())
     }
 

@@ -1,210 +1,322 @@
+use crate::models::{self, MarketTag, QdrantMarketConverter};
 use crate::qdrant;
-use alloy::{hex, signers::local::PrivateKeySigner};
-use anyhow::{Ok, Result, bail, ensure};
-use chrono::{Duration as ChronoDuration, Utc};
+use anyhow::{Context, Ok, Result};
+use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use kalshi_rs::{
-    KalshiClient, KalshiWebsocketClient, auth::auth_loader, markets::models::MarketsQuery,
+    KalshiClient, KalshiWebsocketClient,
+    markets::models::MarketsQuery,
+    series::models::{Series, SeriesQuery},
     websocket::models::KalshiSocketMessage,
 };
-use std::fs as std_fs;
-use std::io::Write;
-use tokio::fs as tokio_fs;
-use tokio::io::{AsyncWriteExt, BufWriter as tokio_bufWriter};
+use std::num::NonZeroU32;
+use std::{sync::Arc, time::Duration};
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
-pub async fn run_kalshi_ws(shutdown: CancellationToken) -> Result<()> {
-    let account = auth_loader::load_auth_from_file()?;
+#[derive(Clone)]
+pub struct MyKalshiClient {
+    http_client: Arc<KalshiClient>,
+    ws_client: Arc<KalshiWebsocketClient>,
+    qdrant_client: qdrant::VectorStore,
+    account: kalshi_rs::Account,
+    read_rate_limiter: Arc<DefaultDirectRateLimiter>,
+}
 
-    let kalshi_http = KalshiClient::new(account.clone());
-    let kalshi_ws = KalshiWebsocketClient::new(account.clone());
-    kalshi_ws.connect().await?;
+impl MyKalshiClient {
+    pub fn new(account: kalshi_rs::Account, qdrant_client: qdrant::VectorStore) -> Self {
+        let quota = Quota::per_second(NonZeroU32::new(15).unwrap());
+        let read_rate_limiter = RateLimiter::direct(quota);
 
-    kalshi_ws
-        .subscribe(vec!["market_lifecycle_v2"], vec![])
-        .await?;
+        let kalshi_http = KalshiClient::new(account.clone());
+        let kalshi_ws = KalshiWebsocketClient::new(account.clone());
 
-    loop {
-        tokio::select! {
-        _ = shutdown.cancelled() => {
-            println!("Kalshi WS shutting down");
-            // kalshi_ws.disconnect();
-            break;
+        tracing::debug!("MyKalshiClient setuped");
+        Self {
+            account,
+            http_client: Arc::new(kalshi_http),
+            ws_client: Arc::new(kalshi_ws),
+            qdrant_client,
+            read_rate_limiter: Arc::new(read_rate_limiter),
+        }
+    }
+
+    pub async fn test_ws_connect(&self) -> Result<()> {
+        self.ws_client
+            .connect()
+            .await
+            .context("failed to establish Kalshi WebSocket connection")?;
+
+        Ok(())
+    }
+
+    pub async fn run_kalshi_ws(&self, shutdown: CancellationToken) -> Result<()> {
+        self.ws_client
+            .subscribe(vec!["market_lifecycle_v2"], vec![])
+            .await?;
+
+        let duration = Duration::from_mins(7);
+        let mut seven_minute_ticker = tokio::time::interval(duration);
+        let mut ws_is_alive = true;
+        loop {
+            tokio::select! {
+                  _ = shutdown.cancelled() => {
+                        tracing::trace!("kalshi received shutdown");
+                        self.ws_client.disconnect().await;
+                        break;
+                  }
+
+                _ = seven_minute_ticker.tick() => {
+                    println!("another seven minute: kalshi");
+                     }
+
+
+                  result = self.ws_client.next_message_two(), if ws_is_alive => {
+                  let Some(result) = result else {
+                      tracing::error!("kalshi WS connection was ended");
+                      ws_is_alive = false;
+                      continue;
+                  };
+
+                  match result {
+                      std::result::Result::Ok(msg) => {
+                        if let Err(e) = self.handle_kalshi_message(msg).await {
+                          tracing::error!("error handling kalshi msg: {e}");
+                        }
+                      }
+
+                      Err(e) => {
+                          tracing::error!("kalshi ws error: {e}");
+                      }
+                  }
+              }
+            }
         }
 
-        result = kalshi_ws.next_message() => {
-            let val = match result {
-                std::result::Result::Ok(v) => v,
-                Err(e) => {
-                    tracing::error!("websocket error: {e:?}");
-                    tracing::debug!("closing ws connection");
-                    break;
-                },
-            };
+        tracing::debug!("kalshi live mode got shutdown");
+        Ok(())
+    }
 
-            match val {
-                KalshiSocketMessage::Ping => {
-                if let Err(e) = kalshi_ws.send_pong().await {
+    async fn handle_kalshi_message(&self, msg: KalshiSocketMessage) -> Result<()> {
+        match msg {
+            KalshiSocketMessage::SubscribedResponse(res) => {
+                println!("Subscribed: {:#?}", res);
+            }
+
+            KalshiSocketMessage::OkResponse(res) => {
+                println!("OK response: {:#?}", res);
+            }
+
+            KalshiSocketMessage::Ping(payload) => {
+                if let Err(e) = self.ws_client.send_pong(payload).await {
                     tracing::error!("error sending pong: {e}");
-                };
-                },
+                }
+            }
 
-                KalshiSocketMessage::Pong => {
-                    tracing::trace!("Pong received");
-                },
+            KalshiSocketMessage::MarketLifecycleV2(event) => {
+                if matches!(
+                    event.msg.event_type.as_str(),
+                    "settled" | "determined" | "close_date_updated" | "deactivated"
+                ) {
+                    return Ok(());
+                }
 
-                KalshiSocketMessage::Close(frame) => {
-                    tracing::info!("WebSocket closed by server: {:?}", frame);
-                    break;
-                },
+                let value = self
+                    .http_client
+                    .get_market(&event.msg.market_ticker)
+                    .await?;
 
-                KalshiSocketMessage::Binary(binary) => {
-                  tracing::debug!( "Received binary WebSocket message ({} bytes)", binary.len());
-              },
+                let event = self
+                    .http_client
+                    .get_event(value.market.event_ticker.as_str())
+                    .await?;
 
-                KalshiSocketMessage::Frame(frame) => {
-                  tracing::trace!("Received raw WebSocket frame: {:?}", frame);
-              },
+                let series = self
+                    .http_client
+                    .get_series_by_ticker(event.event.series_ticker.as_str())
+                    .await?;
 
-                msg => {
-                   if let Err(e) = handle_kalshi_message(msg, &kalshi_http).await {
-                        tracing::error!("error from fn handle_kalshi_message: {e:?}");
-                    }
-                },
+                let market = Self::sort_kalshi_tags(series.series)?;
+                let payload = models::QdrantPayload::from_market(
+                    value.market,
+                    market.info().category,
+                    market.info().subcategory,
+                );
+
+                let data = models::QdrantPointData::new(payload)?;
+                let (point_struct, _) = self.qdrant_client.create_point(data).await?;
+
+                self.qdrant_client.insert(point_struct).await?
+            }
+
+            KalshiSocketMessage::ErrorResponse(err) => {
+                if err
+                    .msg
+                    .msg
+                    .eq_ignore_ascii_case("unable to process message")
+                // very common useless err
+                {
+                    return Ok(());
+                }
+
+                tracing::error!("Kalshi error {}: {}", err.msg.code, err.msg.msg);
+            }
+
+            others => {
+                tracing::debug!("others from kalshi: {:#?}", others);
             }
         }
-        }
+
+        Ok(())
     }
 
-    Ok(())
-}
+    fn sort_kalshi_tags(series_data: Series) -> Result<MarketTag> {
+        let Some(tags) = series_data.tags else {
+            anyhow::bail!("no supported tag found")
+        };
 
-async fn handle_kalshi_message(msg: KalshiSocketMessage, kalshi_http: &KalshiClient) -> Result<()> {
-    match msg {
-        KalshiSocketMessage::SubscribedResponse(res) => {
-            println!("Subscribed: {:#?}", res);
-        }
+        for tag in tags {
+            match tag.as_str().trim() {
+                tag if tag == MarketTag::EPL.info().kalshi_identifier => {
+                    return Ok(MarketTag::EPL);
+                }
+                tag if tag == MarketTag::NBA.info().kalshi_identifier => {
+                    return Ok(MarketTag::NBA);
+                }
+                tag if tag == MarketTag::NFL.info().kalshi_identifier => {
+                    return Ok(MarketTag::NFL);
+                }
 
-        KalshiSocketMessage::UnsubscribedResponse(res) => {
-            println!("Unsubscribed: {:#?}", res);
-        }
-
-        KalshiSocketMessage::OkResponse(res) => {
-            println!("OK response: {:#?}", res);
-        }
-
-        KalshiSocketMessage::ErrorResponse(err) => {
-            if err
-                .msg
-                .msg
-                .eq_ignore_ascii_case("unable to process message")
-            // very common useless err
-            {
-                return Ok(());
+                _ => {}
             }
-
-            tracing::error!("Kalshi error {}: {}", err.msg.code, err.msg.msg);
         }
 
-        KalshiSocketMessage::MarketLifecycleV2(event) => {
-            if matches!(
-                event.msg.event_type.as_str(),
-                "settled" | "determined" | "close_date_updated" | "deactivated"
-            ) {
-                return Ok(());
-            }
-
-            let result = kalshi_http.get_market(&event.msg.market_ticker).await?;
-            let json = serde_json::to_string_pretty(&result)?;
-            let mut file = std_fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open("kalshiNewEvent.ndjson")?;
-            writeln!(file, "{json}")?;
-        }
-
-        KalshiSocketMessage::OrderbookSnapshot(snapshot) => {
-            println!("OrderbookSnapshot: {:#?}", snapshot);
-        }
-
-        KalshiSocketMessage::OrderbookDelta(delta) => {
-            println!("OrderbookDelta: {:#?}", delta);
-        }
-
-        KalshiSocketMessage::TradeUpdate(trade) => {
-            println!("Trade update: {:#?}", trade);
-        }
-
-        KalshiSocketMessage::TickerUpdate(ticker) => {
-            println!("Ticker update: {:#?}", ticker);
-        }
-
-        KalshiSocketMessage::UserFill(fill) => {
-            println!("User fill: {:#?}", fill);
-        }
-
-        KalshiSocketMessage::MarketPosition(pos) => {
-            println!("Market position update: {:#?}", pos);
-        }
-
-        KalshiSocketMessage::EventLifecycle(event) => {
-            println!("EventLifecycle: {:#?}", event);
-        }
-
-        KalshiSocketMessage::Unhandled(value) => {
-            tracing::warn!("Unhandled WS payload:\n{:#?}", value);
-        }
-
-        others => {
-            println!("others: {:#?}", others);
-        }
+        anyhow::bail!("no supported tag found")
     }
 
-    Ok(())
-}
-
-async fn poll_kalshi_for_historical_data(kalshi_http: &KalshiClient) -> Result<()> {
-    let needed_time = (Utc::now() - ChronoDuration::hours(24)).timestamp();
-    let mut cursor: Option<String> = None;
-    let file = tokio_fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("kalshiNewEvent2.ndjson")
-        .await?;
-
-    let mut writer = tokio_bufWriter::with_capacity(64 * 1024, file);
-    let (mut count, mut num): (u64, u64) = (0, 0);
-    println!("number of count/num, {}/{}", count, num);
-
-    loop {
-        let result = kalshi_http
-            .get_all_markets(&MarketsQuery {
-                limit: Some(100),
-                status: Some("open".to_string()),
-                min_created_ts: Some(needed_time),
-                cursor: cursor.clone(),
+    pub async fn backfill_kalshi_sport_history(&self) -> Result<()> {
+        let result = self
+            .http_client
+            .get_all_series(SeriesQuery {
+                category: Some("Sports".to_string()),
+                // tag: Some("Soccer".to_string()),
+                include_product_metadata: Some(true),
+                include_volume: Some(true),
                 ..Default::default()
             })
             .await?;
-        // let Result =  kalshi_http.get_all_events(&)
 
-        let market_len = result.markets.len() as u64;
-        println!("len of market, {:?}", market_len);
-        for market in result.markets {
-            let json = serde_json::to_string(&market)?;
-            writer.write_all(json.as_bytes()).await?;
-            writer.write_all(b"\n").await?;
+        let mut soccer = Vec::with_capacity(result.series.len() / 3);
+        let mut football = Vec::with_capacity(result.series.len() / 3);
+        let mut basketball = Vec::with_capacity(result.series.len() / 3);
+
+        for market in result.series {
+            let Some(tags) = &market.tags else { continue };
+
+            if market.category.trim() != "Sports" {
+                continue;
+            }
+
+            for tag in tags {
+                match tag.as_str().trim() {
+                    "Soccer" => {
+                        soccer.push(market.ticker.clone());
+                        break;
+                    }
+                    "Football" => {
+                        football.push(market.ticker.clone());
+                        break;
+                    }
+                    "Basketball" => {
+                        basketball.push(market.ticker.clone());
+                        break;
+                    }
+                    _ => {}
+                }
+            }
         }
 
-        count += 1;
-        num += market_len;
-        println!("number of count/num, {}/{}", count, num);
+        let mut join_set = JoinSet::new();
 
-        match result.cursor {
-            Some(next) if !next.is_empty() => cursor = Some(next),
-            _ => break,
+        let this = self.clone();
+        join_set.spawn(async move {
+            this.read_rate_limiter.until_ready().await;
+            this.resolve_past_sport(MarketTag::EPL, soccer).await
+        });
+
+        let this = self.clone();
+        join_set.spawn(async move {
+            this.read_rate_limiter.until_ready().await;
+            this.resolve_past_sport(MarketTag::NFL, football).await
+        });
+
+        let this = self.clone();
+        join_set.spawn(async move {
+            this.read_rate_limiter.until_ready().await;
+            this.resolve_past_sport(MarketTag::NBA, basketball).await
+        });
+
+        while let Some(res) = join_set.join_next().await {
+            match res {
+                std::result::Result::Ok(std::result::Result::Ok(())) => {}
+                std::result::Result::Ok(std::result::Result::Err(e)) => {
+                    tracing::error!("backfill failed: {e:?}")
+                }
+                std::result::Result::Err(join_err) => {
+                    tracing::error!("backfill task panicked: {join_err:?}")
+                }
+            }
         }
+
+        tracing::info!("kalshi backfill completed, entering live mode");
+        Ok(())
     }
 
-    writer.flush().await?;
-    Ok(())
+    pub async fn backfill_kalshi_history(&self) -> Result<()> {
+        self.backfill_kalshi_sport_history()
+            .await
+            .context("kalshi sport backfill failed")?;
+
+        // others in the future
+        Ok(())
+    }
+
+    async fn resolve_past_sport(&self, market: MarketTag, tickers: Vec<String>) -> Result<()> {
+        let account = kalshi_rs::Account::new("".to_string(), "".to_string());
+        let client = KalshiClient::new(account);
+
+        let mut container = Vec::with_capacity(3_000);
+        for series_ticker in tickers {
+            let mut cursor: Option<String> = None;
+            loop {
+                let result = client
+                    .get_all_markets(&MarketsQuery {
+                        limit: Some(100),
+                        cursor: cursor.clone(),
+                        status: Some("open".to_string()),
+                        series_ticker: Some(series_ticker.clone()),
+                        ..Default::default()
+                    })
+                    .await?;
+
+                container.extend(result.markets);
+
+                match result.cursor {
+                    Some(next) if !next.is_empty() => cursor = Some(next),
+                    _ => break,
+                }
+            }
+        }
+
+        let payload = models::QdrantPayload::from_markets(
+            container,
+            market.info().category,
+            market.info().subcategory,
+        );
+
+        let data_list = models::QdrantPointData::new_many(payload)?;
+        let result = self.qdrant_client.create_points(data_list).await?;
+
+        let point_structs = result.into_iter().map(|(point, _)| point).collect();
+        self.qdrant_client.insert_many(point_structs, 100).await
+    }
 }

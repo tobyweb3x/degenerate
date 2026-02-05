@@ -5,4 +5,5 @@
 *.pem
 *.hex
 *.json
+*.ndjson
 .idea
