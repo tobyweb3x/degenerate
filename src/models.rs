@@ -1,7 +1,9 @@
 use anyhow::{Ok, Result, ensure};
-
 use polymarket_hft::client::polymarket::gamma::{self, helpers::deserialize_option_f64};
+use qdrant_client::qdrant;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fmt;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -154,7 +156,7 @@ impl QdrantPointData {
         }
         question_vector.push(')');
 
-        println!("question vector --> {question_vector}:{}", payload.platform);
+        // println!("question vector --> {question_vector}:{}", payload.platform);
         Ok(Self {
             id: payload.uuid.clone(),
             question_vector,
@@ -183,8 +185,8 @@ impl QdrantPointData {
         self.question_vector.as_str()
     }
 
-    pub fn get_payload(&self) -> &QdrantPayload {
-        &self.payload
+    pub fn get_payload(&self) -> QdrantPayload {
+        self.payload.clone()
     }
 
     fn validate(payload: &QdrantPayload) -> Result<()> {
@@ -243,7 +245,7 @@ pub trait QdrantMarketConverter<T> {
     ) -> Vec<QdrantPayload>;
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct QdrantPayload {
     pub uuid: String,
     pub question: String,
@@ -345,6 +347,16 @@ impl From<kalshi_rs::markets::models::Market> for QdrantPayload {
     }
 }
 
+impl TryFrom<HashMap<String, qdrant::Value>> for QdrantPayload {
+    type Error = anyhow::Error;
+
+    fn try_from(value: HashMap<String, qdrant::Value>) -> Result<Self, Self::Error> {
+        let json = serde_json::to_value(value)?;
+        let payload = serde_json::from_value(json)?;
+        Ok(payload)
+    }
+}
+
 impl QdrantMarketConverter<gamma::Market> for QdrantPayload {
     fn from_market(
         value: gamma::Market,
@@ -409,39 +421,42 @@ impl QdrantMarketConverter<kalshi_rs::markets::models::Market> for QdrantPayload
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Platform {
-    Polymarket,
-    Kalshi,
-    Opinions,
-    Probable,
-}
+// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+// pub enum Platform {
+//     Polymarket,
+//     Kalshi,
+//     Opinions,
+//     Probable,
+// }
 
-impl Platform {
-    pub const ALL: [Platform; 4] = [
-        Platform::Polymarket,
-        Platform::Kalshi,
-        Platform::Opinions,
-        Platform::Probable,
-    ];
+// impl Platform {
+//     pub const ALL: [Platform; 4] = [
+//         Platform::Polymarket,
+//         Platform::Kalshi,
+//         Platform::Opinions,
+//         Platform::Probable,
+//     ];
 
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Polymarket => "polymarket",
-            Self::Kalshi => "kalshi",
-            Self::Opinions => "opinions",
-            Self::Probable => "probable",
-        }
-    }
+//     pub fn names(self) -> &'static str {
+//         match self {
+//             Self::Polymarket => "polymarket",
+//             Self::Kalshi => "kalshi",
+//             Self::Opinions => "opinions",
+//             Self::Probable => "probable",
+//         }
+//     }
 
-    pub fn others(self) -> Vec<Platform> {
-        Self::ALL.iter().copied().filter(|p| *p != self).collect()
-    }
+//     pub fn others(self) -> Vec<Platform> {
+//         Self::ALL.iter().copied().filter(|p| *p != self).collect()
+//     }
 
-    pub fn other_platform_names(self) -> Vec<&'static str> {
-        self.others().into_iter().map(|p| p.as_str()).collect()
-    }
-}
+//     pub fn other_platform_names(self) -> Vec<String> {
+//         self.others()
+//             .into_iter()
+//             .map(|p| p.names().to_string())
+//             .collect()
+//     }
+// }
 
 pub enum MarketTag {
     EPL,
@@ -489,5 +504,93 @@ impl MarketTag {
                 subcategory: "NFL",
             },
         }
+    }
+}
+
+#[derive(Debug)]
+pub enum Todos {
+    Similarity(SimilarityHit),
+}
+
+#[derive(Debug)]
+pub struct SimilarityHit {
+    pub take: QdrantPayload,
+    pub gives: Vec<Give>,
+}
+
+impl SimilarityHit {
+    pub fn try_from_results(take: QdrantPayload, gives: Vec<qdrant::ScoredPoint>) -> Result<Self> {
+        let gives = gives
+            .into_iter()
+            .map(Give::try_from) // Uses the single impl above!
+            .collect::<Result<Vec<Give>, anyhow::Error>>()?;
+
+        Ok(Self { take, gives })
+    }
+}
+
+impl fmt::Display for SimilarityHit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "==============start================")?;
+        writeln!(f, "PRIMARY MARKET")?;
+        writeln!(f, "Question : {}", self.take.question)?;
+        writeln!(f, "Outcomes : {}", self.take.outcome)?;
+        writeln!(f, "Rules    : {}", self.take.description)?;
+        writeln!(f, "Platform    : {}", self.take.platform)?;
+        writeln!(f, "Market category    : {}", self.take.market_category)?;
+
+        writeln!(
+            f,
+            "Market subcategory    : {}",
+            self.take.market_subcategory
+        )?;
+        writeln!(f)?;
+
+        writeln!(f, "CANDIDATE MATCHES: {}", self.gives.len())?;
+
+        for (i, give) in self.gives.iter().enumerate() {
+            writeln!(f, "\nMatch #{}", i + 1)?;
+            writeln!(f, "{give}")?;
+        }
+        writeln!(f, "==============end================")?;
+
+        fmt::Result::Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct Give {
+    pub scored: f32,
+    pub payload: QdrantPayload,
+}
+
+impl fmt::Display for Give {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "----------------------------------------")?;
+        writeln!(f, "Question   : {}", self.payload.question)?;
+        writeln!(f, "Outcomes   : {}", self.payload.outcome)?;
+        writeln!(f, "Similarity : {:.2}%", self.scored * 100.0)?;
+        writeln!(f, "Rules      : {}", self.payload.description)?;
+        writeln!(f, "Platform    : {}", self.payload.platform)?;
+        writeln!(f, "Market category    : {}", self.payload.market_category)?;
+        writeln!(
+            f,
+            "Market subcategory    : {}",
+            self.payload.market_subcategory
+        )?;
+
+        fmt::Result::Ok(())
+    }
+}
+
+impl TryFrom<qdrant::ScoredPoint> for Give {
+    type Error = anyhow::Error;
+
+    fn try_from(value: qdrant::ScoredPoint) -> Result<Self, Self::Error> {
+        let payload = QdrantPayload::try_from(value.payload)?;
+        Ok(Give {
+            scored: value.score,
+            payload,
+        })
     }
 }

@@ -1,16 +1,16 @@
 use crate::constants;
-use crate::models;
-use crate::models::QdrantPointData;
+use crate::models::Todos;
+use crate::models::{self, QdrantPointData};
 use anyhow::{Context, Ok, Result};
 use candle_core::Device;
 use qdrant_client::{
     Payload, Qdrant,
     qdrant::{
-        CreateCollectionBuilder, CreateFieldIndexCollectionBuilder, DeletePointsBuilder, FieldType,
-        Filter, HnswConfigDiffBuilder, PointId, PointStruct, PointsIdsList, Query,
+        Condition, CreateCollectionBuilder, CreateFieldIndexCollectionBuilder, DeletePointsBuilder,
+        FieldType, Filter, HnswConfigDiffBuilder, PointId, PointStruct, PointsIdsList, Query,
         QueryBatchPointsBuilder, QueryBatchResponse, QueryPoints, QueryPointsBuilder,
         QueryResponse, UpdateCollectionBuilder, UpsertPointsBuilder, VectorInput,
-        VectorParamsBuilder,
+        VectorParamsBuilder, r#match::MatchValue,
     },
 };
 use sentence_transformers_rs::sentence_transformer::{
@@ -19,26 +19,36 @@ use sentence_transformers_rs::sentence_transformer::{
 use serde_json::json;
 use std::convert::TryFrom;
 use std::sync::Arc;
-use tokio::task;
+use tokio::{sync::mpsc, task};
 
 #[derive(Clone)]
 pub struct VectorStore {
     qudrant_client: Qdrant,
     collection_name: &'static str,
     semantic_model: Arc<SentenceTransformer>,
+    tx: mpsc::Sender<Todos>,
 }
 
 impl VectorStore {
-    pub async fn new_metal(url: &str, collection_name: &'static str) -> Result<Self> {
+    pub async fn new_metal(
+        url: &str,
+        collection_name: &'static str,
+        tx: mpsc::Sender<Todos>,
+    ) -> Result<Self> {
         let device =
             candle_core::Device::new_metal(0).context("metal device initialization failed")?;
 
-        let vs = Self::new(url, collection_name, device).await?;
+        let vs = Self::new(url, collection_name, device, tx).await?;
         tracing::debug!("succesfully setup vector store");
         Ok(vs)
     }
 
-    async fn new(url: &str, collection_name: &'static str, device: Device) -> Result<Self> {
+    async fn new(
+        url: &str,
+        collection_name: &'static str,
+        device: Device,
+        tx: mpsc::Sender<Todos>,
+    ) -> Result<Self> {
         let client = Qdrant::from_url(url)
             .skip_compatibility_check()
             .build()
@@ -55,7 +65,7 @@ impl VectorStore {
                 .context("error creating new qdrant collection")?;
         }
 
-        let model = SentenceTransformerBuilder::with_sentence_transformer(&Which::AllMiniLML6v2)
+        let model = SentenceTransformerBuilder::with_sentence_transformer(&Which::BgeSmallEnV1_5)
             .batch_size(2048)
             .with_device(&device)
             .build()
@@ -65,6 +75,7 @@ impl VectorStore {
             qudrant_client: client,
             collection_name,
             semantic_model: Arc::new(model),
+            tx,
         })
     }
 
@@ -114,6 +125,28 @@ impl VectorStore {
             )
             .await?;
 
+        Ok(())
+    }
+
+    pub async fn setup_qdrant_payload_index(&self) -> Result<()> {
+        use constants::*;
+        self.index_payload(FIELD_UUID, FieldType::Uuid)
+            .await
+            .context(format!("qdrant index error on {}", FIELD_UUID))?;
+        self.index_payload(FIELD_MARKET_CATEGORY, FieldType::Keyword)
+            .await
+            .context(format!("qdrant index error on {}", FIELD_MARKET_CATEGORY))?;
+        self.index_payload(FIELD_PLATFORM, FieldType::Keyword)
+            .await
+            .context(format!("qdrant index error on {}", FIELD_PLATFORM))?;
+        self.index_payload(FIELD_MARKET_SUBCATEGORY, FieldType::Keyword)
+            .await
+            .context(format!("qdrant index error on {}", FIELD_MARKET_CATEGORY))?;
+        self.index_payload(FIELD_END_DATE, FieldType::Datetime)
+            .await
+            .context(format!("qdrant index error on {}", FIELD_END_DATE))?;
+
+        tracing::debug!("payload index setup succesfully");
         Ok(())
     }
 
@@ -176,8 +209,8 @@ impl VectorStore {
             return Ok(());
         }
 
-        let chunk_size = if chunk_size < 1_000 {
-            1_000
+        let chunk_size = if chunk_size < 2_000 {
+            2_000
         } else {
             chunk_size
         };
@@ -198,30 +231,50 @@ impl VectorStore {
         point_data: models::QdrantPointData,
         score_threshold: f32,
         filter: Option<Filter>,
-    ) -> Result<QueryResponse> {
+    ) -> Result<()> {
+        let take = point_data.get_payload();
         let (point, vec_data) = self.create_point(point_data).await?;
         self.insert(point).await?;
-        self.semantic_similarity_search(vec_data, score_threshold, 10, filter, true)
+        let response = self
+            .semantic_similarity_search(vec_data, score_threshold, 10, filter, true)
+            .await?;
+
+        if response.result.len() == 0 {
+            return Ok(());
+        }
+
+        let hit = models::SimilarityHit::try_from_results(take, response.result)?;
+
+        self.tx
+            .send(models::Todos::Similarity(hit))
             .await
+            .context("error sending to channel")?;
+        Ok(())
     }
 
     pub async fn insert_many_and_search(
         &self,
         values: Vec<(models::QdrantPointData, Option<Filter>)>,
         chunk_size: usize,
-    ) -> Result<QueryBatchResponse> {
+    ) -> Result<()> {
+        let takes: Vec<models::QdrantPayload> =
+            values.iter().map(|(data, _)| data.get_payload()).collect();
+
         let (point_structs, filters): (Vec<QdrantPointData>, Vec<Option<Filter>>) =
             values.into_iter().unzip();
+
         let result = self.create_points(point_structs).await?;
+
         let (point_structs, vec_datas): (Vec<PointStruct>, Vec<Vec<f32>>) =
             result.into_iter().unzip();
+
         self.insert_many(point_structs, chunk_size).await?;
 
         let mut query_points = Vec::with_capacity(vec_datas.len());
         for (vec_data, filter) in vec_datas.into_iter().zip(filters) {
             let mut request = QueryPointsBuilder::new(self.collection_name)
                 .query(Query::new_nearest(vec_data))
-                .score_threshold(0.85)
+                .score_threshold(constants::SIMILARITY_SCORE_THRESHOLD)
                 .limit(10)
                 .with_payload(true);
 
@@ -232,7 +285,33 @@ impl VectorStore {
             query_points.push(request.build());
         }
 
-        self.semantic_similarity_search_batch(query_points).await
+        let responses = self.semantic_similarity_search_batch(query_points).await?;
+
+        if responses.result.len() == 0 {
+            return Ok(());
+        }
+
+        if takes.len() != responses.result.len() {
+            anyhow::bail!(
+                "batch search alignment error: Sent {} queries but received {} responses",
+                takes.len(),
+                responses.result.len()
+            );
+        }
+
+        for (take, response) in takes.into_iter().zip(responses.result) {
+            if response.result.is_empty() {
+                continue;
+            }
+
+            let hit = models::SimilarityHit::try_from_results(take, response.result)?;
+            self.tx
+                .send(models::Todos::Similarity(hit))
+                .await
+                .context("error sending to channel")?;
+        }
+
+        Ok(())
     }
 
     pub async fn delete_points(&self, ids: Vec<PointId>) -> Result<()> {
@@ -244,28 +323,6 @@ impl VectorStore {
             )
             .await?;
 
-        Ok(())
-    }
-
-    pub async fn setup_qdrant_payload_index(&self) -> Result<()> {
-        use constants::*;
-        self.index_payload(FIELD_UUID, FieldType::Uuid)
-            .await
-            .context(format!("qdrant index error on {}", FIELD_UUID))?;
-        self.index_payload(FIELD_MARKET_CATEGORY, FieldType::Keyword)
-            .await
-            .context(format!("qdrant index error on {}", FIELD_MARKET_CATEGORY))?;
-        self.index_payload(FIELD_PLATFORM, FieldType::Keyword)
-            .await
-            .context(format!("qdrant index error on {}", FIELD_PLATFORM))?;
-        self.index_payload(FIELD_MARKET_SUBCATEGORY, FieldType::Keyword)
-            .await
-            .context(format!("qdrant index error on {}", FIELD_MARKET_CATEGORY))?;
-        self.index_payload(FIELD_END_DATE, FieldType::Datetime)
-            .await
-            .context(format!("qdrant index error on {}", FIELD_END_DATE))?;
-
-        tracing::debug!("payload index setup succesfully");
         Ok(())
     }
 
@@ -315,6 +372,44 @@ impl VectorStore {
         point.vectors = Some((&vec_data[..]).into());
 
         Ok((point, vec_data))
+    }
+
+    pub fn create_cross_platform_filter(
+        platform: Option<String>,
+        market: &models::MarketTag,
+    ) -> Option<Filter> {
+        let platform = platform?;
+
+        Some(Filter::must([
+            Condition::matches(constants::FIELD_PLATFORM, !MatchValue::Keyword(platform)),
+            Condition::matches(
+                constants::FIELD_MARKET_CATEGORY,
+                market.info().category.to_string(),
+            ),
+            Condition::matches(
+                constants::FIELD_MARKET_SUBCATEGORY,
+                market.info().subcategory.to_string(),
+            ),
+        ]))
+    }
+
+    pub fn create_intra_platform_filter(
+        platform: Option<String>,
+        market: &models::MarketTag,
+    ) -> Option<Filter> {
+        let platform = platform?;
+
+        Some(Filter::must([
+            Condition::matches(constants::FIELD_PLATFORM, platform),
+            Condition::matches(
+                constants::FIELD_MARKET_CATEGORY,
+                market.info().category.to_string(),
+            ),
+            Condition::matches(
+                constants::FIELD_MARKET_SUBCATEGORY,
+                market.info().subcategory.to_string(),
+            ),
+        ]))
     }
 }
 

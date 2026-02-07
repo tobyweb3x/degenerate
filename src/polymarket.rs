@@ -1,31 +1,33 @@
-use crate::models;
-use crate::models::QdrantMarketConverter;
-use crate::qdrant;
+use crate::models::{QdrantMarketConverter, QdrantPointData};
+use crate::vector_store;
+use crate::{constants, models};
 use alloy::{hex, signers::local::PrivateKeySigner};
 use anyhow::{Context, Ok, Result};
 use chrono::{Duration as ChronoDuration, SecondsFormat, Utc};
 use polymarket_hft::client::polymarket::{clob, clob::ws::WsMessage, gamma};
 use std::{fs, path::Path, time::Duration};
-use tokio::task::JoinSet;
+use tokio::{sync::mpsc, task::JoinSet};
 use tokio_util::sync::CancellationToken;
+
 const PRIVATE_KEY_FILE: &str = "privateKey.hex";
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct MyPolymarketClient {
     gamma_client: gamma::Client,
     clob_ws_client: clob::ws::ClobWsClient,
-    qdrant_client: qdrant::VectorStore,
+    qdrant_client: vector_store::VectorStore,
+    tx: mpsc::Sender<models::Todos>,
 }
 
 impl MyPolymarketClient {
-    pub fn new(qdrant_client: qdrant::VectorStore) -> Self {
+    pub fn new(qdrant_client: vector_store::VectorStore, tx: mpsc::Sender<models::Todos>) -> Self {
         tracing::debug!("MyPolymarketClient setupped");
 
         Self {
             gamma_client: gamma::Client::new(),
             clob_ws_client: clob::ws::ClobWsClient::new(),
             qdrant_client,
+            tx,
         }
     }
 
@@ -93,9 +95,17 @@ impl MyPolymarketClient {
                 );
 
                 let data = models::QdrantPointData::new(payload)?;
-                let (point_struct, _) = self.qdrant_client.create_point(data).await?;
 
-                self.qdrant_client.insert(point_struct).await?
+                self.qdrant_client
+                    .insert_and_search(
+                        data,
+                        constants::SIMILARITY_SCORE_THRESHOLD,
+                        vector_store::VectorStore::create_cross_platform_filter(
+                            Some(constants::PLATFORM_POLYMARKET.to_string()),
+                            &market,
+                        ),
+                    )
+                    .await?
             }
 
             other => {
@@ -203,10 +213,19 @@ impl MyPolymarketClient {
         );
 
         let data_list = models::QdrantPointData::new_many(payload)?;
-        let result = self.qdrant_client.create_points(data_list).await?;
 
-        let point_structs = result.into_iter().map(|(point, _)| point).collect();
-        self.qdrant_client.insert_many(point_structs, 100).await
+        let needed = data_list
+            .into_iter()
+            .map(|point| {
+                let filter = vector_store::VectorStore::create_cross_platform_filter(
+                    Some(constants::PLATFORM_POLYMARKET.to_string()),
+                    &market,
+                );
+                (point, filter)
+            })
+            .collect();
+
+        self.qdrant_client.insert_many_and_search(needed, 100).await
     }
 
     pub async fn backfill_polymarket_history(&self) -> Result<()> {

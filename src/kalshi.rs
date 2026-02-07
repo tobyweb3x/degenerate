@@ -1,5 +1,6 @@
+use crate::constants;
 use crate::models::{self, MarketTag, QdrantMarketConverter};
-use crate::qdrant;
+use crate::vector_store;
 use anyhow::{Context, Ok, Result};
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use kalshi_rs::{
@@ -10,20 +11,25 @@ use kalshi_rs::{
 };
 use std::num::NonZeroU32;
 use std::{sync::Arc, time::Duration};
-use tokio::task::JoinSet;
+use tokio::{sync::mpsc, task::JoinSet};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub struct MyKalshiClient {
     http_client: Arc<KalshiClient>,
     ws_client: Arc<KalshiWebsocketClient>,
-    qdrant_client: qdrant::VectorStore,
+    qdrant_client: vector_store::VectorStore,
     account: kalshi_rs::Account,
     read_rate_limiter: Arc<DefaultDirectRateLimiter>,
+    tx: mpsc::Sender<models::Todos>,
 }
 
 impl MyKalshiClient {
-    pub fn new(account: kalshi_rs::Account, qdrant_client: qdrant::VectorStore) -> Self {
+    pub fn new(
+        account: kalshi_rs::Account,
+        qdrant_client: vector_store::VectorStore,
+        tx: mpsc::Sender<models::Todos>,
+    ) -> Self {
         let quota = Quota::per_second(NonZeroU32::new(15).unwrap());
         let read_rate_limiter = RateLimiter::direct(quota);
 
@@ -37,6 +43,7 @@ impl MyKalshiClient {
             ws_client: Arc::new(kalshi_ws),
             qdrant_client,
             read_rate_limiter: Arc::new(read_rate_limiter),
+            tx,
         }
     }
 
@@ -143,9 +150,16 @@ impl MyKalshiClient {
                 );
 
                 let data = models::QdrantPointData::new(payload)?;
-                let (point_struct, _) = self.qdrant_client.create_point(data).await?;
-
-                self.qdrant_client.insert(point_struct).await?
+                self.qdrant_client
+                    .insert_and_search(
+                        data,
+                        constants::SIMILARITY_SCORE_THRESHOLD,
+                        vector_store::VectorStore::create_cross_platform_filter(
+                            Some(constants::PLATFORM_KALSHI.to_string()),
+                            &market,
+                        ),
+                    )
+                    .await?
             }
 
             KalshiSocketMessage::ErrorResponse(err) => {
@@ -171,7 +185,7 @@ impl MyKalshiClient {
 
     fn sort_kalshi_tags(series_data: Series) -> Result<MarketTag> {
         let Some(tags) = series_data.tags else {
-            anyhow::bail!("no supported tag found")
+            anyhow::bail!("no tag found")
         };
 
         for tag in tags {
