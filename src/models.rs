@@ -532,18 +532,14 @@ impl SimilarityHit {
 impl fmt::Display for SimilarityHit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "==============start================")?;
-        writeln!(f, "PRIMARY MARKET")?;
+        writeln!(f, "ANCHOR MARKET")?;
         writeln!(f, "Question : {}", self.take.question)?;
         writeln!(f, "Outcomes : {}", self.take.outcome)?;
-        writeln!(f, "Rules    : {}", self.take.description)?;
-        writeln!(f, "Platform    : {}", self.take.platform)?;
-        writeln!(f, "Market category    : {}", self.take.market_category)?;
-
-        writeln!(
-            f,
-            "Market subcategory    : {}",
-            self.take.market_subcategory
-        )?;
+        writeln!(f, "Platform : {}", self.take.platform)?;
+        writeln!(f, "Market category : {}", self.take.market_category)?;
+        writeln!(f, "Market subcategory : {}", self.take.market_subcategory)?;
+        writeln!(f, "Rules : {}", self.take.description)?;
+        writeln!(f, "ticker : {}", self.take.condition_id)?;
         writeln!(f)?;
 
         writeln!(f, "CANDIDATE MATCHES: {}", self.gives.len())?;
@@ -567,17 +563,18 @@ pub struct Give {
 impl fmt::Display for Give {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "----------------------------------------")?;
-        writeln!(f, "Question   : {}", self.payload.question)?;
-        writeln!(f, "Outcomes   : {}", self.payload.outcome)?;
+        writeln!(f, "Question : {}", self.payload.question)?;
+        writeln!(f, "Outcomes : {}", self.payload.outcome)?;
         writeln!(f, "Similarity : {:.2}%", self.scored * 100.0)?;
-        writeln!(f, "Rules      : {}", self.payload.description)?;
-        writeln!(f, "Platform    : {}", self.payload.platform)?;
-        writeln!(f, "Market category    : {}", self.payload.market_category)?;
+        writeln!(f, "Platform : {}", self.payload.platform)?;
+        writeln!(f, "Market category : {}", self.payload.market_category)?;
         writeln!(
             f,
-            "Market subcategory    : {}",
+            "Market subcategory : {}",
             self.payload.market_subcategory
         )?;
+        writeln!(f, "Rules : {}", self.payload.description)?;
+        writeln!(f, "ticker : {}", self.payload.condition_id)?;
 
         fmt::Result::Ok(())
     }

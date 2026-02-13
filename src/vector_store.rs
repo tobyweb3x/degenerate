@@ -65,7 +65,7 @@ impl VectorStore {
                 .context("error creating new qdrant collection")?;
         }
 
-        let model = SentenceTransformerBuilder::with_sentence_transformer(&Which::BgeSmallEnV1_5)
+        let model = SentenceTransformerBuilder::with_sentence_transformer(&Which::AllMiniLML12v2)
             .batch_size(2048)
             .with_device(&device)
             .build()
