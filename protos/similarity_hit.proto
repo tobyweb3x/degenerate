@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package similarityhit;
+option go_package = "web/protos;";
+
+message QdrantPayload {
+    string uuid = 1;
+    string question = 2;
+    string outcome = 3;
+    string clob_token_ids = 4;
+    string rules = 5;
+    string market_id = 6;
+    string market_category = 7;
+    string market_subcategory = 8;
+    string platform = 9;
+    string end_date = 10;
+}
+
+message Give {
+    float scored = 1;
+    QdrantPayload payload = 2;
+}
+
+message SimilarityHit {
+    QdrantPayload take = 1;
+    repeated Give gives = 2;
+}
+
+message Ebo {
+    string correlation_id = 1;
+
+    oneof payload {
+        SimilarityHit cross_platform_arb = 2;
+        SimilarityHit intra_platform_arb = 3;
+    }
+}
+
+service EsuOdara {
+  rpc Esu(stream Ebo) returns (stream Ebo);
+}
+

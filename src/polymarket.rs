@@ -1,6 +1,9 @@
-use crate::models::{QdrantMarketConverter, QdrantPointData};
+use crate::models::QdrantMarketConverter;
 use crate::vector_store;
-use crate::{constants, models};
+use crate::{
+    constants,
+    models::{self, protos},
+};
 use alloy::{hex, signers::local::PrivateKeySigner};
 use anyhow::{Context, Ok, Result};
 use chrono::{Duration as ChronoDuration, SecondsFormat, Utc};
@@ -88,7 +91,7 @@ impl MyPolymarketClient {
 
                 let market = Self::sort_polymarket_tags(tags)?;
 
-                let payload = models::QdrantPayload::from_market(
+                let payload = protos::QdrantPayload::from_market(
                     value,
                     market.info().category,
                     market.info().subcategory,
@@ -206,7 +209,7 @@ impl MyPolymarketClient {
             }
         }
 
-        let payload = models::QdrantPayload::from_markets(
+        let payload = protos::QdrantPayload::from_markets(
             container,
             market.info().category,
             market.info().subcategory,

@@ -1,0 +1,85 @@
+package frontend
+
+templ DashboardPage() {
+	@document(dashboardMain(), nil)
+}
+
+templ dashboardMain() {
+	<div class="mx-10 overflow-y-auto h-full">
+		<p class="text-2xl font-normal text-left pt-10 pb-8">GM,</p>
+		<div class="flex gap-6 w-full justify-between items-center">
+			<div
+				class="bg-purple-700 rounded-3xl 
+                     bg-[url('/assets/svg/create-new-folder.svg')] bg-cover bg-blend-multiply"
+			>
+				<div class="text-[#E6E6E6] w-full flex flex-col items-center gap-[2.563rem] pt-10 pb-16 px-[3.896rem]">
+					<p class="font-medium text-2xl text-nowrap">Launched token 22</p>
+					<p class="font-medium text-[2.813rem] leading-13">0</p>
+				</div>
+			</div>
+			<div
+				class="bg-green-800 rounded-3xl 
+                     bg-[url('/assets/svg/rocket-launch.svg')] bg-cover bg-blend-multiply"
+			>
+				<div class="text-[#E6E6E6] w-full flex flex-col items-center gap-[2.563rem] pt-10 pb-16 px-[3.896rem]">
+					<p class="font-medium text-2xl text-nowrap">Launched token 22</p>
+					<p class="font-medium text-[2.813rem] leading-13">0</p>
+				</div>
+			</div>
+			<div
+				class="bg-purple-950 rounded-3xl 
+                     bg-[url('/assets/svg/create-new-folder.svg')] bg-cover bg-blend-multiply"
+			>
+				<div class="text-[#E6E6E6] w-full flex flex-col items-center gap-[2.563rem] pt-10 pb-16 px-[3.896rem]">
+					<p class="font-medium text-2xl text-nowrap">Launched token 22</p>
+					<p class="font-medium text-[2.813rem] leading-13">0</p>
+				</div>
+			</div>
+		</div>
+		<div class="flex w-full justify-between items-center mt-10">
+			<p class="text-2xl font-normal text-left font-ArchivoSemiCondensed_SemiBold">Tokens Created</p>
+			<div class="relative w-fit h-auto">
+				<img
+					src="/assets/svg/MagnifyingGlass.svg"
+					alt=""
+					class="w-6 aspect-square absolute left-1 top-1/2 transform -translate-y-1/2 pointer-events-none"
+				/>
+				<input
+					type="text"
+					placeholder="Search"
+					class="bg-transparent border-b-[0.3px] border-[#7F7F7F] font-normal text-xs tracking-[0.004em] text-left text-[#A3A3A3] pl-10 pr-10 py-2 focus:outline-hidden focus:border-b-purple-400
+                            transition-colors"
+				/>
+				<img
+					src="/assets/svg/Funnel.svg"
+					alt=""
+					class="w-6 aspect-square absolute right-3 top-1/2 transform -translate-y-1/2 h-5 pointer-events-none"
+				/>
+			</div>
+		</div>
+		<section class="mx-auto mt-auto">
+			<div class="flex flex-col items-center justify-center gap-6 pt-24">
+				<img
+					src="/assets/svg/empty-dashboard 1.svg"
+					alt=""
+					class="w-35.5 aspect-square"
+				/>
+				<div class="font-normal">
+					<p class="text-[1.75rem] leading-9 text-left text-wrap">You don't have any Token created</p>
+					<p class="text-sm tracking-[0.0025em] text-center text-[#A3A3A3] text-wrap">Kindly create a new token via the create button below</p>
+				</div>
+				<button
+					class="flex gap-2 rounded-3xl py-4 px-[6.188rem] justify-center items-center text-[#FDFDFD] outline-hidden themed-btn transition duration-500 ease-in-out focus:scale-y-110 focus:scale-x-110 cursor-pointer"
+					_="on click call #dialogPageFour.showModal()"
+				>
+					<img
+						src="/assets/svg/plus-white.svg"
+						alt=""
+						class="w-6 aspect-square"
+					/>
+					<p class="text-sm font-bold tracking-[0.001em] text-center">Create new Token</p>
+				</button>
+			</div>
+		</section>
+	</div>
+}

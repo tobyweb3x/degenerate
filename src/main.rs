@@ -1,10 +1,12 @@
 use anyhow::{Ok, Result};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
+use tracing_subscriber;
 
 mod app;
 mod arb;
 mod constants;
+mod grpc;
 mod kalshi;
 mod models;
 mod polymarket;
@@ -14,7 +16,7 @@ mod vector_store;
 async fn main() -> Result<()> {
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
-        .expect("Failed to install rustls crypto provider");
+        .expect("failed to install rustls crypto provider");
 
     // rustls::crypto::CryptoProvider::install_default().unwrap();
 
@@ -36,17 +38,17 @@ async fn main() -> Result<()> {
         signal_token.cancel();
     });
 
-    let (kalshi_handle, polymarket_handle, picker_handle) =
-        app::app_startup(shutdown.clone()).await?;
+    let app_runtime = app::app_startup(shutdown.clone()).await?;
 
     tokio::select! {
         biased;
-        (poly_res, kalshi_res, picker_res) = async {
-            tokio::join!(polymarket_handle, kalshi_handle, picker_handle)
+        (poly_res, kalshi_res, picker_res, grpc_res) = async {
+            tokio::join!(app_runtime.polymarket_handle, app_runtime.kalshi_handle, app_runtime.picker_handle,app_runtime.grpc_handle)
         } => {
             if let Err(e) = poly_res { tracing::error!("polymarket task panicked: {e:?}"); }
             if let Err(e) = kalshi_res { tracing::error!("kalshi task panicked: {e:?}"); }
             if let Err(e) = picker_res { tracing::error!("picker task panicked: {e:?}"); }
+            if let Err(e) = grpc_res { tracing::error!("grpc task panicked: {e:?}"); }
             tracing::info!("shutdown complete");
         }
 

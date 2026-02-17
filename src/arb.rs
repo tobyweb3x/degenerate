@@ -1,9 +1,8 @@
 use crate::models;
 use crate::models::Todos;
-use anyhow::{Context, Ok, Result};
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use kalshi_rs::{Account, KalshiClient};
-use polymarket_hft::client::polymarket::{clob, gamma};
+use polymarket_hft::client::polymarket::gamma;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -32,7 +31,7 @@ impl Picker {
         }
     }
 
-    pub async fn run_picker(&mut self, shutdown: CancellationToken) -> Result<()> {
+    pub async fn run_picker(&mut self, shutdown: CancellationToken) {
         loop {
             tokio::select! {
                 _ = shutdown.cancelled() => {
@@ -47,13 +46,11 @@ impl Picker {
                     };
 
                    match todo {
-                       models::Todos::Similarity(value) => {println!("{}", value)},
+                       models::Todos::CrossPlatformSimilarityHit(value) => {println!("{}", value)},
                        _ => {}
                    }
                 }
             }
         }
-
-        Ok(())
     }
 }

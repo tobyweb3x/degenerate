@@ -1,5 +1,5 @@
 use crate::constants;
-use crate::models::{self, MarketTag, QdrantMarketConverter};
+use crate::models::{self, QdrantMarketConverter, protos};
 use crate::vector_store;
 use anyhow::{Context, Ok, Result};
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
@@ -143,7 +143,7 @@ impl MyKalshiClient {
                     .await?;
 
                 let market = Self::sort_kalshi_tags(series.series)?;
-                let payload = models::QdrantPayload::from_market(
+                let payload = protos::QdrantPayload::from_market(
                     value.market,
                     market.info().category,
                     market.info().subcategory,
@@ -183,21 +183,21 @@ impl MyKalshiClient {
         Ok(())
     }
 
-    fn sort_kalshi_tags(series_data: Series) -> Result<MarketTag> {
+    fn sort_kalshi_tags(series_data: Series) -> Result<models::MarketTag> {
         let Some(tags) = series_data.tags else {
             anyhow::bail!("no tag found")
         };
 
         for tag in tags {
             match tag.as_str().trim() {
-                tag if tag == MarketTag::EPL.info().kalshi_identifier => {
-                    return Ok(MarketTag::EPL);
+                tag if tag == models::MarketTag::EPL.info().kalshi_identifier => {
+                    return Ok(models::MarketTag::EPL);
                 }
-                tag if tag == MarketTag::NBA.info().kalshi_identifier => {
-                    return Ok(MarketTag::NBA);
+                tag if tag == models::MarketTag::NBA.info().kalshi_identifier => {
+                    return Ok(models::MarketTag::NBA);
                 }
-                tag if tag == MarketTag::NFL.info().kalshi_identifier => {
-                    return Ok(MarketTag::NFL);
+                tag if tag == models::MarketTag::NFL.info().kalshi_identifier => {
+                    return Ok(models::MarketTag::NFL);
                 }
 
                 _ => {}
@@ -254,19 +254,22 @@ impl MyKalshiClient {
         let this = self.clone();
         join_set.spawn(async move {
             this.read_rate_limiter.until_ready().await;
-            this.resolve_past_sport(MarketTag::EPL, soccer).await
+            this.resolve_past_sport(models::MarketTag::EPL, soccer)
+                .await
         });
 
         let this = self.clone();
         join_set.spawn(async move {
             this.read_rate_limiter.until_ready().await;
-            this.resolve_past_sport(MarketTag::NFL, football).await
+            this.resolve_past_sport(models::MarketTag::NFL, football)
+                .await
         });
 
         let this = self.clone();
         join_set.spawn(async move {
             this.read_rate_limiter.until_ready().await;
-            this.resolve_past_sport(MarketTag::NBA, basketball).await
+            this.resolve_past_sport(models::MarketTag::NBA, basketball)
+                .await
         });
 
         while let Some(res) = join_set.join_next().await {
@@ -294,7 +297,11 @@ impl MyKalshiClient {
         Ok(())
     }
 
-    async fn resolve_past_sport(&self, market: MarketTag, tickers: Vec<String>) -> Result<()> {
+    async fn resolve_past_sport(
+        &self,
+        market: models::MarketTag,
+        tickers: Vec<String>,
+    ) -> Result<()> {
         let account = kalshi_rs::Account::new("".to_string(), "".to_string());
         let client = KalshiClient::new(account);
 
@@ -321,7 +328,7 @@ impl MyKalshiClient {
             }
         }
 
-        let payload = models::QdrantPayload::from_markets(
+        let payload = protos::QdrantPayload::from_markets(
             container,
             market.info().category,
             market.info().subcategory,

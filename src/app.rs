@@ -1,18 +1,18 @@
-use anyhow::{Context, Ok, Result};
-use kalshi_rs::auth::auth_loader;
-use tokio::{sync::mpsc, task::JoinHandle};
-use tokio_util::sync::CancellationToken;
-
 use crate::arb;
+use crate::grpc;
 use crate::kalshi;
-use crate::models::Todos;
+use crate::models::{self, protos};
 use crate::polymarket;
 use crate::vector_store;
+use anyhow::{Context, Ok, Result};
+use kalshi_rs::auth::auth_loader;
+use std::sync::Arc;
+use tokio::{sync::mpsc, task::JoinHandle};
+use tokio_util::sync::CancellationToken;
+use tonic::{codec::CompressionEncoding, transport::Server};
 
-pub async fn app_startup(
-    shutdown: CancellationToken,
-) -> Result<(JoinHandle<()>, JoinHandle<()>, JoinHandle<()>)> {
-    let (tx, mut rx) = mpsc::channel::<Todos>(1_000);
+pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
+    let (tx, rx) = mpsc::channel::<models::Todos>(1_000);
 
     // vector store
     let vector_store =
@@ -32,9 +32,7 @@ pub async fn app_startup(
     let picker_handle = tokio::spawn(async move {
         tracing::debug!("picker thread spawn");
         let mut picker = arb::Picker::new(kalshi_account_clone, rx);
-        if let Err(e) = picker.run_picker(picker_shutdown).await {
-            tracing::error!("picker lifecycle failed: {e:?}");
-        }
+        picker.run_picker(picker_shutdown).await
     });
 
     // kalshi
@@ -62,20 +60,71 @@ pub async fn app_startup(
     let polymarket_shutdown = shutdown.clone();
     let polymarket_handle = tokio::spawn(async move {
         tracing::debug!("polymarket thread spawn");
-        if let Err(e) = polymarket_client.run_polymarket(polymarket_shutdown).await {
-            tracing::error!("polymarket lifecycle failed: {e:?}");
-        }
+        polymarket_client
+            .run_polymarket(polymarket_shutdown)
+            .await
+            .map_err(anyhow::Error::from)
     });
 
     let kalshi_shutdown = shutdown.clone();
     let kalshi_handle = tokio::spawn(async move {
         tracing::debug!("kalshi thread spawn");
-        if let Err(e) = kalshi_client.run_kalshi_ws(kalshi_shutdown).await {
-            tracing::error!("Kalshi lifecycle task exited: {e:?}");
-        }
+        kalshi_client
+            .run_kalshi_ws(kalshi_shutdown)
+            .await
+            .map_err(anyhow::Error::from)
+    });
+
+    // grpc server
+    let (bot_tx, bot_rx) = mpsc::channel::<protos::Ebo>(1024);
+    let grpc_service = grpc::GrpcServer::new(bot_tx.clone());
+    let server_shared = Arc::new(grpc_service);
+    let grpc_server_ref = server_shared.clone();
+
+    let addr = "0.0.0.0:50051".parse()?;
+    println!("🚀 gRPC Server listening on {}", addr);
+
+    let esu_service = protos::esu_odara_server::EsuOdaraServer::from_arc(server_shared);
+
+    let esu_service = esu_service
+        .send_compressed(CompressionEncoding::Gzip)
+        .accept_compressed(CompressionEncoding::Gzip);
+
+    let grpc_shutdown = shutdown.clone();
+    let bot_rx_shutdown = shutdown.clone();
+
+    tokio::spawn(async move {
+        grpc_server_ref
+            .handle_bot_flow(bot_rx_shutdown, bot_rx)
+            .await
+    });
+
+    let grpc_handle = tokio::spawn(async move {
+        tracing::debug!("grpc thread spawn");
+
+        Server::builder()
+            .add_service(esu_service)
+            .serve_with_shutdown(addr, async move {
+                grpc_shutdown.cancelled().await;
+                tracing::trace!("grpc received shutdown");
+            })
+            .await
+            .map_err(anyhow::Error::from)
     });
 
     tracing::debug!("would be going live mode now");
 
-    Ok((kalshi_handle, polymarket_handle, picker_handle))
+    Ok(OponIfa {
+        kalshi_handle,
+        polymarket_handle,
+        picker_handle,
+        grpc_handle,
+    })
+}
+
+pub struct OponIfa {
+    pub kalshi_handle: JoinHandle<Result<()>>,
+    pub polymarket_handle: JoinHandle<Result<()>>,
+    pub picker_handle: JoinHandle<()>,
+    pub grpc_handle: JoinHandle<Result<()>>,
 }

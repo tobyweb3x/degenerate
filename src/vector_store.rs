@@ -1,6 +1,6 @@
 use crate::constants;
 use crate::models::Todos;
-use crate::models::{self, QdrantPointData};
+use crate::models::{self, protos};
 use anyhow::{Context, Ok, Result};
 use candle_core::Device;
 use qdrant_client::{
@@ -243,10 +243,10 @@ impl VectorStore {
             return Ok(());
         }
 
-        let hit = models::SimilarityHit::try_from_results(take, response.result)?;
+        let hit = protos::SimilarityHit::try_from_results(take, response.result)?;
 
         self.tx
-            .send(models::Todos::Similarity(hit))
+            .send(models::Todos::CrossPlatformSimilarityHit(hit))
             .await
             .context("error sending to channel")?;
         Ok(())
@@ -257,10 +257,10 @@ impl VectorStore {
         values: Vec<(models::QdrantPointData, Option<Filter>)>,
         chunk_size: usize,
     ) -> Result<()> {
-        let takes: Vec<models::QdrantPayload> =
+        let takes: Vec<protos::QdrantPayload> =
             values.iter().map(|(data, _)| data.get_payload()).collect();
 
-        let (point_structs, filters): (Vec<QdrantPointData>, Vec<Option<Filter>>) =
+        let (point_structs, filters): (Vec<models::QdrantPointData>, Vec<Option<Filter>>) =
             values.into_iter().unzip();
 
         let result = self.create_points(point_structs).await?;
@@ -304,9 +304,9 @@ impl VectorStore {
                 continue;
             }
 
-            let hit = models::SimilarityHit::try_from_results(take, response.result)?;
+            let hit = protos::SimilarityHit::try_from_results(take, response.result)?;
             self.tx
-                .send(models::Todos::Similarity(hit))
+                .send(models::Todos::CrossPlatformSimilarityHit(hit))
                 .await
                 .context("error sending to channel")?;
         }
@@ -328,7 +328,7 @@ impl VectorStore {
 
     pub async fn create_points(
         &self,
-        data_list: Vec<QdrantPointData>,
+        data_list: Vec<models::QdrantPointData>,
     ) -> Result<Vec<(PointStruct, Vec<f32>)>> {
         if data_list.is_empty() {
             return Ok(vec![]);
@@ -357,7 +357,10 @@ impl VectorStore {
         Ok(result)
     }
 
-    pub async fn create_point(&self, data: QdrantPointData) -> Result<(PointStruct, Vec<f32>)> {
+    pub async fn create_point(
+        &self,
+        data: models::QdrantPointData,
+    ) -> Result<(PointStruct, Vec<f32>)> {
         let model = self.semantic_model.clone();
         let text = data.get_question_vector().to_string();
 
@@ -413,9 +416,9 @@ impl VectorStore {
     }
 }
 
-impl TryFrom<QdrantPointData> for PointStruct {
+impl TryFrom<models::QdrantPointData> for PointStruct {
     type Error = anyhow::Error;
-    fn try_from(value: QdrantPointData) -> Result<Self, Self::Error> {
+    fn try_from(value: models::QdrantPointData) -> Result<Self, Self::Error> {
         let payload =
             Payload::try_from(json!(value.get_payload())).context("payload conversion failed")?;
 

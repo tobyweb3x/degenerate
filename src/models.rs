@@ -1,140 +1,24 @@
 use anyhow::{Ok, Result, ensure};
-use polymarket_hft::client::polymarket::gamma::{self, helpers::deserialize_option_f64};
+use polymarket_hft::client::polymarket::gamma;
 use qdrant_client::qdrant;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct PolymarketUsefulData {
-    pub question: Option<String>,
-    pub description: Option<String>,
-    pub outcomes: Option<String>,
-    #[serde(alias = "resolutionSource")]
-    pub resolution_source: Option<String>,
-
-    #[serde(alias = "conditionId")]
-    pub condition_id: Option<String>,
-    #[serde(alias = "questionID")]
-    pub question_id: Option<String>,
-
-    #[serde(alias = "endDate")]
-    pub end_date: Option<String>,
-    #[serde(alias = "startDate")]
-    pub start_date: Option<String>,
-    #[serde(alias = "closedTime")]
-    pub closed_time: Option<String>,
-    #[serde(alias = "endDateIso")]
-    pub end_date_iso: Option<String>,
-
-    #[serde(alias = "enableOrderBook")]
-    pub enable_order_book: Option<bool>,
-    #[serde(alias = "clobTokenIds")]
-    pub clob_token_ids: Option<String>,
-    #[serde(alias = "acceptingOrders")]
-    pub accepting_orders: Option<bool>,
-    pub ready: Option<bool>,
-    pub active: Option<bool>,
-    pub closed: Option<bool>,
-
-    #[serde(alias = "negRiskOther")]
-    pub neg_risk_other: Option<bool>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_option_f64",
-        alias = "orderPriceMinTickSize"
-    )]
-    pub order_price_min_tick_size: Option<f64>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_option_f64",
-        alias = "orderMinSize"
-    )]
-    pub order_min_size: Option<f64>,
-
-    pub market_category: String,
-    pub market_subcategory: String,
-    pub platform: String,
-}
-
-impl From<gamma::Market> for PolymarketUsefulData {
-    fn from(value: gamma::Market) -> Self {
-        Self {
-            question: value.question,
-            description: value.description,
-            outcomes: value.outcomes,
-            resolution_source: value.resolution_source,
-
-            condition_id: value.condition_id,
-            question_id: value.question_id,
-
-            end_date: value.end_date,
-            start_date: value.start_date,
-            closed_time: value.closed_time,
-            end_date_iso: value.end_date_iso,
-
-            enable_order_book: value.enable_order_book,
-            clob_token_ids: value.clob_token_ids,
-            accepting_orders: value.accepting_orders,
-            ready: value.ready,
-            active: value.active,
-            closed: value.closed,
-
-            neg_risk_other: value.neg_risk_other,
-            order_price_min_tick_size: value.order_price_min_tick_size,
-            order_min_size: value.order_min_size,
-            market_category: String::new(),
-            market_subcategory: String::new(),
-            platform: String::new(),
-        }
-    }
-}
-
-impl PolymarketUsefulData {
-    pub fn from_market(
-        value: gamma::Market,
-        market_category: String,
-        market_subcategory: String,
-    ) -> Self {
-        let mut uselful_data: Self = value.into();
-        uselful_data.platform = "Polymarket".to_string();
-        uselful_data.market_category = market_category;
-        uselful_data.market_subcategory = market_subcategory;
-        uselful_data
-    }
-
-    pub fn from_markets(
-        values: Vec<gamma::Market>,
-        market_category: &str,
-        market_subcategory: &str,
-    ) -> Vec<Self> {
-        let category = market_category.to_string();
-        let subcategory = market_subcategory.to_string();
-        let platform = "Polymarket".to_string();
-
-        values
-            .into_iter()
-            .map(|value| {
-                let mut data: Self = value.into();
-                data.platform = platform.clone();
-                data.market_category = category.clone();
-                data.market_subcategory = subcategory.clone();
-                data
-            })
-            .collect()
-    }
+pub mod protos {
+    tonic::include_proto!("similarityhit");
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct QdrantPointData {
     id: String,
     question_vector: String,
-    payload: QdrantPayload,
+    payload: protos::QdrantPayload,
 }
 
 impl QdrantPointData {
-    pub fn new(payload: QdrantPayload) -> Result<Self> {
+    pub fn new(payload: protos::QdrantPayload) -> Result<Self> {
         Self::validate(&payload)?;
 
         let mut question_vector = String::with_capacity(
@@ -164,7 +48,9 @@ impl QdrantPointData {
         })
     }
 
-    pub fn new_many(payloads: impl IntoIterator<Item = QdrantPayload>) -> Result<Vec<Self>> {
+    pub fn new_many(
+        payloads: impl IntoIterator<Item = protos::QdrantPayload>,
+    ) -> Result<Vec<Self>> {
         Ok(payloads
             .into_iter()
             .filter_map(|payload| match Self::new(payload) {
@@ -185,11 +71,11 @@ impl QdrantPointData {
         self.question_vector.as_str()
     }
 
-    pub fn get_payload(&self) -> QdrantPayload {
+    pub fn get_payload(&self) -> protos::QdrantPayload {
         self.payload.clone()
     }
 
-    fn validate(payload: &QdrantPayload) -> Result<()> {
+    fn validate(payload: &protos::QdrantPayload) -> Result<()> {
         ensure!(
             Uuid::parse_str(payload.uuid.as_str()).is_ok(),
             "uuid string not valid uuid"
@@ -215,11 +101,11 @@ impl QdrantPointData {
             );
         }
         ensure!(
-            !payload.description.trim().is_empty(),
+            !payload.rules.trim().is_empty(),
             "description cannot be empty"
         );
         ensure!(
-            !payload.condition_id.trim().is_empty(),
+            !payload.market_id.trim().is_empty(),
             "condition_id cannot be empty"
         );
         ensure!(
@@ -231,54 +117,7 @@ impl QdrantPointData {
     }
 }
 
-pub trait QdrantMarketConverter<T> {
-    fn from_market(
-        value: T,
-        category: impl Into<String>,
-        subcategory: impl Into<String>,
-    ) -> QdrantPayload;
-
-    fn from_markets(
-        values: Vec<T>,
-        category: impl Into<String>,
-        subcategory: impl Into<String>,
-    ) -> Vec<QdrantPayload>;
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug)]
-pub struct QdrantPayload {
-    pub uuid: String,
-    pub question: String,
-    pub outcome: String,
-    pub clob_token_ids: String,
-    pub description: String,
-    pub condition_id: String,
-    pub market_category: String,
-    #[serde(default)]
-    pub market_subcategory: String,
-    pub platform: String,
-    #[serde(default)]
-    pub end_date: String,
-}
-
-impl From<PolymarketUsefulData> for QdrantPayload {
-    fn from(value: PolymarketUsefulData) -> Self {
-        Self {
-            uuid: Uuid::new_v4().to_string(),
-            question: value.question.unwrap_or_default(),
-            outcome: value.outcomes.unwrap_or_default(),
-            clob_token_ids: value.clob_token_ids.unwrap_or_default(),
-            description: value.description.unwrap_or_default(),
-            condition_id: value.condition_id.unwrap_or_default(),
-            market_category: value.market_category,
-            market_subcategory: value.market_subcategory,
-            platform: value.platform,
-            end_date: value.end_date_iso.or(value.end_date).unwrap_or_default(),
-        }
-    }
-}
-
-impl From<gamma::Market> for QdrantPayload {
+impl From<gamma::Market> for protos::QdrantPayload {
     fn from(value: gamma::Market) -> Self {
         Self {
             uuid: Uuid::new_v4().to_string(),
@@ -292,8 +131,8 @@ impl From<gamma::Market> for QdrantPayload {
             },
             outcome: value.outcomes.unwrap_or_default().replace('\\', ""),
             clob_token_ids: value.clob_token_ids.unwrap_or_default(),
-            description: value.description.unwrap_or_default(),
-            condition_id: value.condition_id.unwrap_or_default(),
+            rules: value.description.unwrap_or_default(),
+            market_id: value.condition_id.unwrap_or_default(),
             market_category: String::new(),
             market_subcategory: String::new(),
             platform: "polymarket".to_string(),
@@ -302,7 +141,7 @@ impl From<gamma::Market> for QdrantPayload {
     }
 }
 
-impl From<kalshi_rs::markets::models::Market> for QdrantPayload {
+impl From<kalshi_rs::markets::models::Market> for protos::QdrantPayload {
     fn from(value: kalshi_rs::markets::models::Market) -> Self {
         Self {
             uuid: Uuid::new_v4().to_string(),
@@ -328,8 +167,8 @@ impl From<kalshi_rs::markets::models::Market> for QdrantPayload {
                 outcome.push_str(")]");
                 outcome
             },
-            condition_id: value.ticker,
-            description: {
+            market_id: value.ticker,
+            rules: {
                 if value.rules_secondary.is_empty() {
                     value.rules_primary.clone()
                 } else if value.rules_primary.ends_with('.') {
@@ -347,7 +186,7 @@ impl From<kalshi_rs::markets::models::Market> for QdrantPayload {
     }
 }
 
-impl TryFrom<HashMap<String, qdrant::Value>> for QdrantPayload {
+impl TryFrom<HashMap<String, qdrant::Value>> for protos::QdrantPayload {
     type Error = anyhow::Error;
 
     fn try_from(value: HashMap<String, qdrant::Value>) -> Result<Self, Self::Error> {
@@ -357,7 +196,21 @@ impl TryFrom<HashMap<String, qdrant::Value>> for QdrantPayload {
     }
 }
 
-impl QdrantMarketConverter<gamma::Market> for QdrantPayload {
+pub trait QdrantMarketConverter<T> {
+    fn from_market(
+        value: T,
+        category: impl Into<String>,
+        subcategory: impl Into<String>,
+    ) -> protos::QdrantPayload;
+
+    fn from_markets(
+        values: Vec<T>,
+        category: impl Into<String>,
+        subcategory: impl Into<String>,
+    ) -> Vec<protos::QdrantPayload>;
+}
+
+impl QdrantMarketConverter<gamma::Market> for protos::QdrantPayload {
     fn from_market(
         value: gamma::Market,
         market_category: impl Into<String>,
@@ -389,7 +242,7 @@ impl QdrantMarketConverter<gamma::Market> for QdrantPayload {
     }
 }
 
-impl QdrantMarketConverter<kalshi_rs::markets::models::Market> for QdrantPayload {
+impl QdrantMarketConverter<kalshi_rs::markets::models::Market> for protos::QdrantPayload {
     fn from_market(
         value: kalshi_rs::markets::models::Market,
         market_category: impl Into<String>,
@@ -420,43 +273,6 @@ impl QdrantMarketConverter<kalshi_rs::markets::models::Market> for QdrantPayload
             .collect()
     }
 }
-
-// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-// pub enum Platform {
-//     Polymarket,
-//     Kalshi,
-//     Opinions,
-//     Probable,
-// }
-
-// impl Platform {
-//     pub const ALL: [Platform; 4] = [
-//         Platform::Polymarket,
-//         Platform::Kalshi,
-//         Platform::Opinions,
-//         Platform::Probable,
-//     ];
-
-//     pub fn names(self) -> &'static str {
-//         match self {
-//             Self::Polymarket => "polymarket",
-//             Self::Kalshi => "kalshi",
-//             Self::Opinions => "opinions",
-//             Self::Probable => "probable",
-//         }
-//     }
-
-//     pub fn others(self) -> Vec<Platform> {
-//         Self::ALL.iter().copied().filter(|p| *p != self).collect()
-//     }
-
-//     pub fn other_platform_names(self) -> Vec<String> {
-//         self.others()
-//             .into_iter()
-//             .map(|p| p.names().to_string())
-//             .collect()
-//     }
-// }
 
 pub enum MarketTag {
     EPL,
@@ -509,37 +325,49 @@ impl MarketTag {
 
 #[derive(Debug)]
 pub enum Todos {
-    Similarity(SimilarityHit),
+    CrossPlatformSimilarityHit(protos::SimilarityHit),
 }
 
-#[derive(Debug)]
-pub struct SimilarityHit {
-    pub take: QdrantPayload,
-    pub gives: Vec<Give>,
-}
+// #[derive(Debug)]
+// pub struct SimilarityHit {
+//     pub take: protos::QdrantPayload,
+//     pub gives: Vec<protos::Give>,
+// }
 
-impl SimilarityHit {
-    pub fn try_from_results(take: QdrantPayload, gives: Vec<qdrant::ScoredPoint>) -> Result<Self> {
+impl protos::SimilarityHit {
+    pub fn try_from_results(
+        take: protos::QdrantPayload,
+        gives: Vec<qdrant::ScoredPoint>,
+    ) -> Result<Self> {
         let gives = gives
             .into_iter()
-            .map(Give::try_from) // Uses the single impl above!
-            .collect::<Result<Vec<Give>, anyhow::Error>>()?;
+            .map(protos::Give::try_from) // Uses the single impl above!
+            .collect::<Result<Vec<protos::Give>, anyhow::Error>>()?;
 
-        Ok(Self { take, gives })
+        Ok(Self {
+            take: Some(take),
+            gives,
+        })
     }
 }
 
-impl fmt::Display for SimilarityHit {
+impl fmt::Display for protos::SimilarityHit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Some(take) = &self.take else {
+            writeln!(f, "ANCHOR MARKET: <missing>")?;
+            return fmt::Result::Ok(());
+        };
+
         writeln!(f, "==============start================")?;
         writeln!(f, "ANCHOR MARKET")?;
-        writeln!(f, "Question : {}", self.take.question)?;
-        writeln!(f, "Outcomes : {}", self.take.outcome)?;
-        writeln!(f, "Platform : {}", self.take.platform)?;
-        writeln!(f, "Market category : {}", self.take.market_category)?;
-        writeln!(f, "Market subcategory : {}", self.take.market_subcategory)?;
-        writeln!(f, "Rules : {}", self.take.description)?;
-        writeln!(f, "ticker : {}", self.take.condition_id)?;
+        writeln!(f, "Question : {}", take.question)?;
+        writeln!(f, "Outcomes : {}", take.outcome)?;
+        writeln!(f, "Platform : {}", take.platform)?;
+        writeln!(f, "Market category : {}", take.market_category)?;
+        writeln!(f, "Market subcategory : {}", take.market_subcategory)?;
+        writeln!(f, "Rules : {}", take.rules)?;
+        writeln!(f, "ticker : {}", take.market_id)?;
+
         writeln!(f)?;
 
         writeln!(f, "CANDIDATE MATCHES: {}", self.gives.len())?;
@@ -554,40 +382,34 @@ impl fmt::Display for SimilarityHit {
     }
 }
 
-#[derive(Debug)]
-pub struct Give {
-    pub scored: f32,
-    pub payload: QdrantPayload,
-}
-
-impl fmt::Display for Give {
+impl fmt::Display for protos::Give {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Some(payload) = &self.payload else {
+            return fmt::Result::Ok(());
+        };
+
         writeln!(f, "----------------------------------------")?;
-        writeln!(f, "Question : {}", self.payload.question)?;
-        writeln!(f, "Outcomes : {}", self.payload.outcome)?;
-        writeln!(f, "Similarity : {:.2}%", self.scored * 100.0)?;
-        writeln!(f, "Platform : {}", self.payload.platform)?;
-        writeln!(f, "Market category : {}", self.payload.market_category)?;
-        writeln!(
-            f,
-            "Market subcategory : {}",
-            self.payload.market_subcategory
-        )?;
-        writeln!(f, "Rules : {}", self.payload.description)?;
-        writeln!(f, "ticker : {}", self.payload.condition_id)?;
+        writeln!(f, "Question : {}", payload.question)?;
+        writeln!(f, "Outcomes : {}", payload.outcome)?;
+        writeln!(f, "Similarity : {:.2}%", &self.scored * 100.0)?;
+        writeln!(f, "Platform : {}", payload.platform)?;
+        writeln!(f, "Market category : {}", payload.market_category)?;
+        writeln!(f, "Market subcategory : {}", payload.market_subcategory)?;
+        writeln!(f, "Rules : {}", payload.rules)?;
+        writeln!(f, "ticker : {}", payload.market_id)?;
 
         fmt::Result::Ok(())
     }
 }
 
-impl TryFrom<qdrant::ScoredPoint> for Give {
+impl TryFrom<qdrant::ScoredPoint> for protos::Give {
     type Error = anyhow::Error;
 
     fn try_from(value: qdrant::ScoredPoint) -> Result<Self, Self::Error> {
-        let payload = QdrantPayload::try_from(value.payload)?;
-        Ok(Give {
+        let payload = protos::QdrantPayload::try_from(value.payload)?;
+        Ok(protos::Give {
             scored: value.score,
-            payload,
+            payload: Some(payload),
         })
     }
 }

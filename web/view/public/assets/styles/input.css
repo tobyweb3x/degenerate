@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@plugin "daisyui" {
+  themes: light --default;
+  root: ":root";
+  include: toggle, collapse, loading, select, loading;
+  exlcude:;
+  prefix: "daisyui-";
+  logs: true;
+}
+
+@font-face {
+  font-family: "Archivo SemiCondensed-regular";
+  font-style: normal;
+  font-weight: 400;
+  src: url("/assets/fonts/Archivo_SemiCondensed/Archivo_SemiCondensed-Regular.ttf")
+    format("truetype");
+}
+@font-face {
+  font-family: "Archivo SemiCondensed-semibold";
+  src: url("../fonts/Archivo_SemiCondensed/Archivo_SemiCondensed-SemiBold.ttf");
+}
+
+@font-face {
+  font-family: "DM Sans-Regular";
+  font-style: normal;
+  font-weight: 400;
+  src: url("../fonts/DM_Sans/DMSans-VariableFont_opsz\,wght.ttf");
+}
+
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+@theme {
+  --font-archivo: "Archivo SemiCondensed-regular";
+  --font-archivoSemiBold: "Archivo SemiCondensed-semiBold";
+  --font-dmSans: "DM Sans-Regular";
+}
+
+@utility themed-btn {
+  background-image: linear-gradient(88.93deg, #9945ff -4.48%, #12db88 114.18%);
+}
+
+@utility noArrowInInputTypeNumber {
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    margin: 0;
+  }
+}
+
+@utility gradientBorder {
+  background:
+    linear-gradient(#1b012a 0 0) padding-box,
+    /* this is your background */
+      linear-gradient(90deg, #ad6aff 0%, #12db88 100%) border-box;
+  border: 0.0625rem solid transparent;
+  opacity: 0px;
+}
+
+.overflow-y-auto::-webkit-scrollbar {
+  width: 0 !important;
+  display: none;
+  overflow: -moz-scrollbars-none;
+  scrollbar-width: none;
+}
+

@@ -27,6 +27,13 @@ sentence-transformers-rs ={ path = "../libs/sentence-transformers-rs", features 
 uuid = { version = "1.0", features = ["v4", "serde"] } # Enables v4 generation and Serde support
 governor = "0.10.4"
 rustls = { version = "0.23.36", features = ["aws_lc_rs"] }
+tonic = {version = "0.14.4", features = ["transport", "gzip"]}
+tonic-prost = "0.14.4"
+prost = "0.14.3"
+tokio-stream = "0.1.18"
+
+[build-dependencies]
+tonic-prost-build = "0.14.4"
 
 
 

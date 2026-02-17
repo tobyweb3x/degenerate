@@ -1,10 +1,7 @@
 /target
 .DS_Store
-.env
-*.key
-*.pem
-*.hex
-*.json
-*.ndjson
 .idea
-pkg/
+.env
+*.hex
+*.pem
+json/
