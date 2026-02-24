@@ -19,27 +19,27 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Esu_EsuStream_FullMethodName = "/similarityhit.Esu/EsuStream"
+	EsuOdara_Esu_FullMethodName = "/similarityhit.EsuOdara/Esu"
 )
 
-// EsuClient is the client API for Esu service.
+// EsuOdaraClient is the client API for EsuOdara service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type EsuClient interface {
-	EsuStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[Ebo, Ebo], error)
+type EsuOdaraClient interface {
+	Esu(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[Ebo, Ebo], error)
 }
 
-type esuClient struct {
+type esuOdaraClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewEsuClient(cc grpc.ClientConnInterface) EsuClient {
-	return &esuClient{cc}
+func NewEsuOdaraClient(cc grpc.ClientConnInterface) EsuOdaraClient {
+	return &esuOdaraClient{cc}
 }
 
-func (c *esuClient) EsuStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[Ebo, Ebo], error) {
+func (c *esuOdaraClient) Esu(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[Ebo, Ebo], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Esu_ServiceDesc.Streams[0], Esu_EsuStream_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &EsuOdara_ServiceDesc.Streams[0], EsuOdara_Esu_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -48,65 +48,65 @@ func (c *esuClient) EsuStream(ctx context.Context, opts ...grpc.CallOption) (grp
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Esu_EsuStreamClient = grpc.BidiStreamingClient[Ebo, Ebo]
+type EsuOdara_EsuClient = grpc.BidiStreamingClient[Ebo, Ebo]
 
-// EsuServer is the server API for Esu service.
-// All implementations must embed UnimplementedEsuServer
+// EsuOdaraServer is the server API for EsuOdara service.
+// All implementations must embed UnimplementedEsuOdaraServer
 // for forward compatibility.
-type EsuServer interface {
-	EsuStream(grpc.BidiStreamingServer[Ebo, Ebo]) error
-	mustEmbedUnimplementedEsuServer()
+type EsuOdaraServer interface {
+	Esu(grpc.BidiStreamingServer[Ebo, Ebo]) error
+	mustEmbedUnimplementedEsuOdaraServer()
 }
 
-// UnimplementedEsuServer must be embedded to have
+// UnimplementedEsuOdaraServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedEsuServer struct{}
+type UnimplementedEsuOdaraServer struct{}
 
-func (UnimplementedEsuServer) EsuStream(grpc.BidiStreamingServer[Ebo, Ebo]) error {
-	return status.Error(codes.Unimplemented, "method EsuStream not implemented")
+func (UnimplementedEsuOdaraServer) Esu(grpc.BidiStreamingServer[Ebo, Ebo]) error {
+	return status.Error(codes.Unimplemented, "method Esu not implemented")
 }
-func (UnimplementedEsuServer) mustEmbedUnimplementedEsuServer() {}
-func (UnimplementedEsuServer) testEmbeddedByValue()             {}
+func (UnimplementedEsuOdaraServer) mustEmbedUnimplementedEsuOdaraServer() {}
+func (UnimplementedEsuOdaraServer) testEmbeddedByValue()                  {}
 
-// UnsafeEsuServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to EsuServer will
+// UnsafeEsuOdaraServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to EsuOdaraServer will
 // result in compilation errors.
-type UnsafeEsuServer interface {
-	mustEmbedUnimplementedEsuServer()
+type UnsafeEsuOdaraServer interface {
+	mustEmbedUnimplementedEsuOdaraServer()
 }
 
-func RegisterEsuServer(s grpc.ServiceRegistrar, srv EsuServer) {
-	// If the following call panics, it indicates UnimplementedEsuServer was
+func RegisterEsuOdaraServer(s grpc.ServiceRegistrar, srv EsuOdaraServer) {
+	// If the following call panics, it indicates UnimplementedEsuOdaraServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&Esu_ServiceDesc, srv)
+	s.RegisterService(&EsuOdara_ServiceDesc, srv)
 }
 
-func _Esu_EsuStream_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(EsuServer).EsuStream(&grpc.GenericServerStream[Ebo, Ebo]{ServerStream: stream})
+func _EsuOdara_Esu_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(EsuOdaraServer).Esu(&grpc.GenericServerStream[Ebo, Ebo]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Esu_EsuStreamServer = grpc.BidiStreamingServer[Ebo, Ebo]
+type EsuOdara_EsuServer = grpc.BidiStreamingServer[Ebo, Ebo]
 
-// Esu_ServiceDesc is the grpc.ServiceDesc for Esu service.
+// EsuOdara_ServiceDesc is the grpc.ServiceDesc for EsuOdara service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var Esu_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "similarityhit.Esu",
-	HandlerType: (*EsuServer)(nil),
+var EsuOdara_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "similarityhit.EsuOdara",
+	HandlerType: (*EsuOdaraServer)(nil),
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "EsuStream",
-			Handler:       _Esu_EsuStream_Handler,
+			StreamName:    "Esu",
+			Handler:       _EsuOdara_Esu_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},

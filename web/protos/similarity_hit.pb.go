@@ -244,11 +244,12 @@ func (x *SimilarityHit) GetGives() []*Give {
 type Ebo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CorrelationId string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
-	// Types that are valid to be assigned to Payload:
+	Timestamp     int64                  `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	// Types that are valid to be assigned to Action:
 	//
 	//	*Ebo_CrossPlatformArb
 	//	*Ebo_IntraPlatformArb
-	Payload       isEbo_Payload `protobuf_oneof:"payload"`
+	Action        isEbo_Action `protobuf_oneof:"action"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -290,16 +291,23 @@ func (x *Ebo) GetCorrelationId() string {
 	return ""
 }
 
-func (x *Ebo) GetPayload() isEbo_Payload {
+func (x *Ebo) GetTimestamp() int64 {
 	if x != nil {
-		return x.Payload
+		return x.Timestamp
+	}
+	return 0
+}
+
+func (x *Ebo) GetAction() isEbo_Action {
+	if x != nil {
+		return x.Action
 	}
 	return nil
 }
 
 func (x *Ebo) GetCrossPlatformArb() *SimilarityHit {
 	if x != nil {
-		if x, ok := x.Payload.(*Ebo_CrossPlatformArb); ok {
+		if x, ok := x.Action.(*Ebo_CrossPlatformArb); ok {
 			return x.CrossPlatformArb
 		}
 	}
@@ -308,28 +316,28 @@ func (x *Ebo) GetCrossPlatformArb() *SimilarityHit {
 
 func (x *Ebo) GetIntraPlatformArb() *SimilarityHit {
 	if x != nil {
-		if x, ok := x.Payload.(*Ebo_IntraPlatformArb); ok {
+		if x, ok := x.Action.(*Ebo_IntraPlatformArb); ok {
 			return x.IntraPlatformArb
 		}
 	}
 	return nil
 }
 
-type isEbo_Payload interface {
-	isEbo_Payload()
+type isEbo_Action interface {
+	isEbo_Action()
 }
 
 type Ebo_CrossPlatformArb struct {
-	CrossPlatformArb *SimilarityHit `protobuf:"bytes,2,opt,name=cross_platform_arb,json=crossPlatformArb,proto3,oneof"`
+	CrossPlatformArb *SimilarityHit `protobuf:"bytes,3,opt,name=cross_platform_arb,json=crossPlatformArb,proto3,oneof"`
 }
 
 type Ebo_IntraPlatformArb struct {
-	IntraPlatformArb *SimilarityHit `protobuf:"bytes,3,opt,name=intra_platform_arb,json=intraPlatformArb,proto3,oneof"`
+	IntraPlatformArb *SimilarityHit `protobuf:"bytes,4,opt,name=intra_platform_arb,json=intraPlatformArb,proto3,oneof"`
 }
 
-func (*Ebo_CrossPlatformArb) isEbo_Payload() {}
+func (*Ebo_CrossPlatformArb) isEbo_Action() {}
 
-func (*Ebo_IntraPlatformArb) isEbo_Payload() {}
+func (*Ebo_IntraPlatformArb) isEbo_Action() {}
 
 var File_similarity_hit_proto protoreflect.FileDescriptor
 
@@ -353,14 +361,15 @@ const file_similarity_hit_proto_rawDesc = "" +
 	"\apayload\x18\x02 \x01(\v2\x1c.similarityhit.QdrantPayloadR\apayload\"l\n" +
 	"\rSimilarityHit\x120\n" +
 	"\x04take\x18\x01 \x01(\v2\x1c.similarityhit.QdrantPayloadR\x04take\x12)\n" +
-	"\x05gives\x18\x02 \x03(\v2\x13.similarityhit.GiveR\x05gives\"\xd3\x01\n" +
+	"\x05gives\x18\x02 \x03(\v2\x13.similarityhit.GiveR\x05gives\"\xf0\x01\n" +
 	"\x03Ebo\x12%\n" +
-	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12L\n" +
-	"\x12cross_platform_arb\x18\x02 \x01(\v2\x1c.similarityhit.SimilarityHitH\x00R\x10crossPlatformArb\x12L\n" +
-	"\x12intra_platform_arb\x18\x03 \x01(\v2\x1c.similarityhit.SimilarityHitH\x00R\x10intraPlatformArbB\t\n" +
-	"\apayload2>\n" +
-	"\x03Esu\x127\n" +
-	"\tEsuStream\x12\x12.similarityhit.Ebo\x1a\x12.similarityhit.Ebo(\x010\x01B\rZ\vweb/protos;b\x06proto3"
+	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x1c\n" +
+	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\x12L\n" +
+	"\x12cross_platform_arb\x18\x03 \x01(\v2\x1c.similarityhit.SimilarityHitH\x00R\x10crossPlatformArb\x12L\n" +
+	"\x12intra_platform_arb\x18\x04 \x01(\v2\x1c.similarityhit.SimilarityHitH\x00R\x10intraPlatformArbB\b\n" +
+	"\x06action2=\n" +
+	"\bEsuOdara\x121\n" +
+	"\x03Esu\x12\x12.similarityhit.Ebo\x1a\x12.similarityhit.Ebo(\x010\x01B\rZ\vweb/protos;b\x06proto3"
 
 var (
 	file_similarity_hit_proto_rawDescOnce sync.Once
@@ -387,8 +396,8 @@ var file_similarity_hit_proto_depIdxs = []int32{
 	1, // 2: similarityhit.SimilarityHit.gives:type_name -> similarityhit.Give
 	2, // 3: similarityhit.Ebo.cross_platform_arb:type_name -> similarityhit.SimilarityHit
 	2, // 4: similarityhit.Ebo.intra_platform_arb:type_name -> similarityhit.SimilarityHit
-	3, // 5: similarityhit.Esu.EsuStream:input_type -> similarityhit.Ebo
-	3, // 6: similarityhit.Esu.EsuStream:output_type -> similarityhit.Ebo
+	3, // 5: similarityhit.EsuOdara.Esu:input_type -> similarityhit.Ebo
+	3, // 6: similarityhit.EsuOdara.Esu:output_type -> similarityhit.Ebo
 	6, // [6:7] is the sub-list for method output_type
 	5, // [5:6] is the sub-list for method input_type
 	5, // [5:5] is the sub-list for extension type_name

@@ -1,139 +1,134 @@
 use crate::models::protos;
 use anyhow::Context;
-use tokio::sync::{broadcast, mpsc};
+use std::time;
+use tokio::{sync::mpsc, time as tokio_time};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
-use tonic::{Request, Response, Status, Streaming};
+use tonic::transport::Endpoint;
 
-pub struct GrpcServer {
-    broadcast_tx: broadcast::Sender<protos::Ebo>,
-    inbound_messages_tx: mpsc::Sender<protos::Ebo>,
-}
+const GRPC_URL: &str = "http://127.0.0.1:50051";
+const KEEPALIVE_TIME: time::Duration = time::Duration::from_secs(10);
+const KEEPALIVE_TIMEOUT: time::Duration = time::Duration::from_secs(2);
+const MAX_RETRIES: usize = 20;
+const RETRY_DELAY: time::Duration = time::Duration::from_secs(2);
 
-impl GrpcServer {
-    pub fn new(inbound_messages_tx: mpsc::Sender<protos::Ebo>) -> Self {
-        let (broadcast_tx, _) = broadcast::channel(100);
+pub async fn run_grpc_client(
+    shutdown: CancellationToken,
+    mut bot_outbound_rx: mpsc::Receiver<protos::Ebo>,
+    bot_inbound_tx: mpsc::Sender<protos::Ebo>,
+) -> anyhow::Result<()> {
+    let mut retries = 0;
 
-        Self {
-            broadcast_tx,
-            inbound_messages_tx,
+    loop {
+        if shutdown.is_cancelled() {
+            return Ok(());
         }
-    }
 
-    pub fn broadcast_to_receiver(&self, ebo: protos::Ebo) -> anyhow::Result<()> {
-        self.broadcast_tx
-            .send(ebo)
-            .context("error broadcasting message")?;
+        tracing::info!(
+            "connecting to gRPC (Attempt {}/{})...",
+            retries + 1,
+            MAX_RETRIES
+        );
 
-        Ok(())
-    }
+        let start_time = time::Instant::now();
 
-    pub async fn handle_bot_flow(
-        &self,
-        bot_rx_shutdown: CancellationToken,
-        mut bot_rx: mpsc::Receiver<protos::Ebo>,
-    ) {
-        loop {
-            tokio::select! {
-                _ = bot_rx_shutdown.cancelled() => {
-                    tracing::trace!("bot_rx received shutdown");
-                    break;
-                },
+        let endpoint = Endpoint::from_static(GRPC_URL)
+            .http2_keep_alive_interval(KEEPALIVE_TIME)
+            .keep_alive_timeout(KEEPALIVE_TIMEOUT)
+            .keep_alive_while_idle(true)
+            .connect_timeout(time::Duration::from_secs(5));
 
-                maybe_msg = bot_rx.recv(), if !bot_rx.is_closed() => {
-                    match maybe_msg {
-                        Some(msg) => {
-                            // based on message, do some work &
-                            // send back apt response to the broadcast (i.e. grpc server)
-                            if let Err(e)= self.broadcast_to_receiver(msg) {
-                                eprintln!("{e}")
-                            }
-                        }
+        let session_result = connect_and_run_session(
+            endpoint,
+            shutdown.clone(),
+            &mut bot_outbound_rx,
+            &bot_inbound_tx,
+        )
+        .await;
 
-
-                        None => {
-                            tracing::info!("Bot channel closed (All senders dropped). Stopping.");
-                            break;
-                        },
-                    }
-                },
+        match session_result {
+            Ok(_) => {
+                tracing::info!("gRPC client stopped cleanly");
+                return Ok(());
+            }
+            Err(e) => {
+                tracing::error!("gRPC stream ended with error: {:?}", e);
             }
         }
+
+        if start_time.elapsed() > time::Duration::from_secs(60) {
+            retries = 0;
+        } else {
+            retries += 1;
+        }
+
+        if retries >= MAX_RETRIES {
+            anyhow::bail!("max gRPC retries ({}) reached. Aborting.", MAX_RETRIES)
+        }
+
+        tokio::select! {
+            _ = shutdown.cancelled() => return Ok(()),
+            _ = tokio_time::sleep(RETRY_DELAY) => continue,
+        }
     }
 }
 
-#[tonic::async_trait]
-impl protos::esu_odara_server::EsuOdara for GrpcServer {
-    type EsuStream = ReceiverStream<Result<protos::Ebo, Status>>;
+async fn connect_and_run_session(
+    endpoint: Endpoint,
+    shutdown: CancellationToken,
+    bot_outbound_rx: &mut mpsc::Receiver<protos::Ebo>,
+    bot_inbound_tx: &mpsc::Sender<protos::Ebo>,
+) -> anyhow::Result<()> {
+    let channel = endpoint
+        .connect()
+        .await
+        .context("failed to connect to grpc server")?;
+    let mut client = protos::esu_odara_client::EsuOdaraClient::new(channel);
 
-    async fn esu(
-        &self,
-        request: Request<Streaming<protos::Ebo>>,
-    ) -> Result<Response<Self::EsuStream>, Status> {
-        let mut global_rx = self.broadcast_tx.subscribe();
+    let (network_tx, network_rx) = mpsc::channel(128);
+    let rx_stream = ReceiverStream::new(network_rx);
+    let response = client
+        .esu(rx_stream)
+        .await
+        .context("failed to open stream")?;
 
-        let (per_client_tx, per_client_rx) = mpsc::channel(128);
+    tracing::info!("gRPC Stream established");
+    let mut inbound_stream = response.into_inner();
+    loop {
+        tokio::select! {
+            _ = shutdown.cancelled() => {
+                return Ok(());
+            }
 
-        let mut inbound_grpc_stream = request.into_inner();
-        let cloned_tx = self.inbound_messages_tx.clone();
-
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-
-                    // BOT → CLIENT
-                    broadcast_msg = global_rx.recv() => {
-                        match broadcast_msg {
-                            Ok(msg) => {
-                               if let Err(status) = per_client_tx.send(Ok(msg)).await {
-                                    eprintln!(
-                                        "gRPC: error sending to client Receiver, dropping sender. error: {:?}",
-                                        status
-                                    );
-                                    break;
-                                }
-
-                            }
-
-                            Err(broadcast::error::RecvError::Lagged(dropped)) => {
-                                eprintln!("client is too slow,{dropped} skip messages")
-                            }
-
-                            Err(broadcast::error::RecvError::Closed) => break,
+            msg = bot_outbound_rx.recv() => { // from bot
+                match msg {
+                    Some(ebo) => {
+                        if network_tx.send(ebo).await.is_err() { // to grpc server
+                            return Err(anyhow::anyhow!("failed to send to grpc network (pipe broken)"));
                         }
                     }
-
-                    // CLIENT → BOT
-                    grpc_msg = inbound_grpc_stream.message() => {
-                        match grpc_msg {
-                            Ok(Some(msg)) => {
-                                if let Err(e) = cloned_tx.send(msg).await {
-                                    eprintln!("gRPC: error sending to bot, error: {:?}", e);
-                                    break;
-                                }
-                            }
-
-                            Ok(None) => {
-                                println!("Client closed stream");
-                                break;
-                            }
-
-                            Err(status) => {
-                                eprintln!(
-                                    "gRPC: error from client. code: {:?}, message: {:?}",
-                                    status.code().description(),
-                                    status.message()
-                                );
-                                break;
-                            }
-                        }
+                    None => {
+                        eprintln!("bot_outbound_rx channel closed");
+                        return Ok(());
                     }
                 }
             }
 
-            println!("Connection task ended");
-        });
-
-        Ok(Response::new(ReceiverStream::new(per_client_rx)))
+            server_msg = inbound_stream.message() => { // from grpc server
+                match server_msg {
+                    Ok(Some(ebo)) => {
+                        if bot_inbound_tx.send(ebo).await.is_err() { // to bot
+                            return Err(anyhow::anyhow!("bot inbound receiver dropped"));
+                        }
+                    }
+                    Ok(None) => {
+                        return Err(anyhow::anyhow!("server closed stream (EOF)"));
+                    }
+                    Err(status) => {
+                        return Err(anyhow::anyhow!("gRPC Error: {:?}", status));
+                    }
+                }
+            }
+        }
     }
 }

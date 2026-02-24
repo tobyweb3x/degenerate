@@ -323,17 +323,6 @@ impl MarketTag {
     }
 }
 
-#[derive(Debug)]
-pub enum Todos {
-    CrossPlatformSimilarityHit(protos::SimilarityHit),
-}
-
-// #[derive(Debug)]
-// pub struct SimilarityHit {
-//     pub take: protos::QdrantPayload,
-//     pub gives: Vec<protos::Give>,
-// }
-
 impl protos::SimilarityHit {
     pub fn try_from_results(
         take: protos::QdrantPayload,

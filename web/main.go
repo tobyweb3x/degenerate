@@ -5,29 +5,79 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+	"web/protos"
 	backend "web/server"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 )
 
 func main() {
 
-	app, port := backend.NewApp(), "8090"
-	server := http.Server{
-		Addr:    fmt.Sprintf(":%v", port),
-		Handler: app.Routes(),
-		// ErrorLog:    slog.NewLogLogger(jsonLogger, slog.LevelError),
-		// IdleTimeout: time.Minute,
-		// ReadTimeout:  5 * time.Second,
-		// WriteTimeout: 10 * time.Second,
+	var environmentalVariables backend.EnvConfig
+	if err := backend.LoadEnv(&environmentalVariables); err != nil {
+		log.Fatalf("error loading environmental variables: %s\n", err.Error()) // exit
 	}
 
+	//  database
+	var databaseUrl string
+	if environmentalVariables.Build == "production" {
+		databaseUrl = environmentalVariables.Database.ProdPrivate
+	} else {
+		databaseUrl = environmentalVariables.Database.Dev
+	}
+
+	conn, err := pgxpool.New(context.Background(), databaseUrl)
+	if err != nil {
+		log.Fatalf("unable to create db connection pool: %s\n", err.Error())
+	}
+	defer conn.Close()
+
+	// app
+	app := backend.NewApp(conn)
+
+	// grpc
+	grpcListener, err := net.Listen("tcp", ":"+environmentalVariables.GrpcPort)
+	if err != nil {
+		log.Printf("grpc: failed to listen on port %s: %s", environmentalVariables.GrpcPort, err.Error())
+	}
+
+	grpcServer := grpc.NewServer(
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             5 * time.Second,
+			PermitWithoutStream: true,
+		}),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    15 * time.Second,
+			Timeout: 5 * time.Second,
+		}),
+	)
+	myServer := backend.NewGrpcServer(app)
+	protos.RegisterEsuOdaraServer(grpcServer, myServer)
+
 	go func() {
-		log.Printf("server is running on http://localhost:%v\n", port)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Panic("Server error: " + err.Error())
+		log.Printf("🚀 gRPC server listening on 0.0.0.0:%s on mode: %s\n", environmentalVariables.GrpcPort, environmentalVariables.Build)
+		if err := grpcServer.Serve(grpcListener); err != nil {
+			log.Printf("failed to serve gRPC: %s", err.Error())
+		}
+	}()
+
+	// http
+	httpServer := http.Server{
+		Addr:    fmt.Sprintf(":%s", environmentalVariables.HttpPort),
+		Handler: app.Routes(),
+	}
+	go func() {
+		log.Printf("http server is running on http://localhost:%s on mode: %s\n", environmentalVariables.HttpPort, environmentalVariables.Build)
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("failed to server http: %s", err.Error())
 		}
 	}()
 
@@ -35,10 +85,12 @@ func main() {
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
 	<-done
-	close(done)
+	grpcServer.GracefulStop()
 
-	if err := server.Shutdown(context.TODO()); err != nil {
-		log.Panic("Graceful server shutdown Failed: " + err.Error())
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("graceful server shutdown Failed: %s", err.Error())
 	}
 
 	log.Println("SERVER STOPPED GRACEFULLY")

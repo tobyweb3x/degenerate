@@ -12,7 +12,7 @@ run:
 	@templ generate && templ fmt .
 
 tailwind:
-	@npx @tailwindcss/cli -i public/assets/styles/input.css  -o public/assets/styles/output.css --watch
+	@npx @tailwindcss/cli -i public/assets/styles/input.css  -o public/assets/styles/output.css --watch --minify
 
 .PHONY: format generate watch run tailwind
 

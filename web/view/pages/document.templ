@@ -37,17 +37,14 @@ templ document(pageMainComp, pageAfterBodyComp templ.Component) {
 			<script src="/assets/scripts/hyperscript.min.js"></script>
 			<title>DearestArb</title>
 		</head>
-		<body class="text-[#EBEBEB] bg-[#06001B] font-dmSans!">
-			<div class="grid grid-cols-[auto_1fr] gap-2 min-[83.5rem]:grid-cols-[minmax(18.875rem,20.97%)_1fr] min-[83.5rem]:gap-0">
+		<body class="text-[#EBEBEB] bg-[#06001B] font-dmSans! h-screen w-screen overflow-hidden">
+			<div class="h-full grid grid-cols-[auto_1fr] gap-2 min-[83.5rem]:grid-cols-[minmax(18.875rem,20.97%)_1fr] min-[83.5rem]:gap-0">
 				@navItem()
-				// <div class="flex flex-col items-stretch">
-				<div class="grid grid-rows-[auto_1fr]">
+				<div class="grid grid-rows-[auto_1fr] min-h-0">
 					@header()
-					<main id="mainContent" class="flex flex-col">
-						// <main id="mainContent" class="grid grid-rows-[auto_1fr]">
-						// 404 page
+					<main id="mainContent" class="overflow-hidden py-2.5 rounded-3xl">
 						if pageMainComp == nil {
-							// @dashboardMain()
+							@dashboardMain()
 						} else {
 							@pageMainComp
 						}
@@ -112,7 +109,7 @@ templ navItem() {
 							</p>
 						</a>
 						<a
-							href="#"
+							href="/resolve"
 							title="Resolve"
 							class="flex min-[83.5rem]:hidden py-[0.82rem] px-[0.40625rem] gap-4 justify-center items-center rounded-full focus:outline-hidden focus:scale-y-110 focus:scale-x-110 focus:bg-menuGradient transition duration-500 ease-in-out"
 						>

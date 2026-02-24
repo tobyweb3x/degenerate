@@ -9,7 +9,7 @@ use anyhow::{Context, Ok, Result};
 use chrono::{Duration as ChronoDuration, SecondsFormat, Utc};
 use polymarket_hft::client::polymarket::{clob, clob::ws::WsMessage, gamma};
 use std::{fs, path::Path, time::Duration};
-use tokio::{sync::mpsc, task::JoinSet};
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 const PRIVATE_KEY_FILE: &str = "privateKey.hex";
@@ -19,25 +19,20 @@ pub struct MyPolymarketClient {
     gamma_client: gamma::Client,
     clob_ws_client: clob::ws::ClobWsClient,
     qdrant_client: vector_store::VectorStore,
-    tx: mpsc::Sender<models::Todos>,
 }
 
 impl MyPolymarketClient {
-    pub fn new(qdrant_client: vector_store::VectorStore, tx: mpsc::Sender<models::Todos>) -> Self {
-        tracing::debug!("MyPolymarketClient setupped");
-
+    pub fn new(qdrant_client: vector_store::VectorStore) -> Self {
         Self {
             gamma_client: gamma::Client::new(),
             clob_ws_client: clob::ws::ClobWsClient::new(),
             qdrant_client,
-            tx,
         }
     }
 
     pub async fn run_polymarket(&mut self, shutdown: CancellationToken) -> Result<()> {
-        let signer = get_signer()?;
+        let _signer = get_signer()?;
 
-        println!("address is - {}", signer.address());
         self.clob_ws_client.subscribe_market(vec![], true).await?;
 
         let duration = Duration::from_mins(5);
@@ -53,27 +48,25 @@ impl MyPolymarketClient {
                 }
 
                 _ = five_minute_ticker.tick() => {
-                    println!("another five minutes: polymarket");
+                    println!("five min triggers");
+                    let _ = self.backfill_polymarket_sport_history(duration, CancellationToken::new()).await
+                    .inspect_err(|e| tracing::error!("backfill failed: {e:?}"));
                 }
 
-                msg = self.clob_ws_client.next_message(), if ws_is_alive => {
-                    match msg {
-                        Some(msg) => {
-                            if let Err(e) = self.handle_polymarket_wss_message(msg).await {
-                                tracing::error!("error from fn wss handler: {e}");
-                            }
-                        }
+                result = self.clob_ws_client.next_message(), if ws_is_alive => {
+                      let Some(msg) = result else {
+                      tracing::error!("polymarket WS connection was ended");
+                      ws_is_alive = false;
+                      continue;
+                  };
 
-                        None => {
-                            tracing::error!("polymarket WS connection was ended");
-                            ws_is_alive = false;
-                        }
-                    }
+                    let _ = self.handle_polymarket_wss_message(msg).await
+                    .inspect_err(|e| tracing::error!("error from wss handler: {e:?}"));
                 }
             }
         }
 
-        tracing::debug!("polymarket live mode is shutting down");
+        tracing::info!("polymarket live mode is shutting down");
         Ok(())
     }
 
@@ -135,11 +128,14 @@ impl MyPolymarketClient {
             }
         }
 
-        anyhow::bail!("no supported tag found")
+        anyhow::bail!("no supported tag found(polymarket)")
     }
 
-    async fn backfill_polymarket_sport_history(&self) -> Result<()> {
-        let duration = Duration::from_hours(24 * 5); // past 5 days
+    async fn backfill_polymarket_sport_history(
+        &self,
+        duration_in_secs: Duration,
+        shutdown: CancellationToken,
+    ) -> Result<()> {
         let tags = [
             models::MarketTag::EPL,
             models::MarketTag::NBA,
@@ -147,34 +143,40 @@ impl MyPolymarketClient {
         ];
 
         let mut join_set = JoinSet::new();
-
+        let duration = duration_in_secs.as_secs();
         for tag in tags {
             let client = self.clone();
-            let duration_secs = duration.as_secs();
-
-            join_set.spawn(async move { client.resolve_past_sport(duration_secs, tag).await });
+            let cloned_shutdown = shutdown.clone();
+            join_set.spawn(async move {
+                client
+                    .backfill_polymakert_sport_for_market_tag(duration, tag, cloned_shutdown)
+                    .await
+            });
         }
 
         while let Some(res) = join_set.join_next().await {
             match res {
                 std::result::Result::Ok(std::result::Result::Ok(())) => {}
                 std::result::Result::Ok(std::result::Result::Err(e)) => {
-                    tracing::error!("backfill failed: {e:?}")
+                    let in_mins = duration / 60;
+                    tracing::error!(
+                        "polymarket sport backfill failed for duration({in_mins}) : {e:?}"
+                    )
                 }
                 std::result::Result::Err(join_err) => {
-                    tracing::error!("task panicked: {join_err:?}")
+                    tracing::error!("polymarket sport backfill task panicked: {join_err:?}")
                 }
             }
         }
 
-        tracing::info!("polymarket backfill completed, entering live mode");
         Ok(())
     }
 
-    async fn resolve_past_sport(
+    async fn backfill_polymakert_sport_for_market_tag(
         &self,
         seconds_duration: u64,
         market: models::MarketTag,
+        shutdown: CancellationToken,
     ) -> Result<()> {
         let time_diff = Utc::now() - ChronoDuration::seconds(seconds_duration as i64);
         let formatted_iso = time_diff.to_rfc3339_opts(SecondsFormat::Secs, true);
@@ -183,6 +185,10 @@ impl MyPolymarketClient {
 
         let mut container = Vec::with_capacity(limit);
         loop {
+            if shutdown.is_cancelled() {
+                break;
+            }
+
             let markets = self
                 .gamma_client
                 .get_markets(gamma::GetMarketsRequest {
@@ -194,8 +200,6 @@ impl MyPolymarketClient {
                     related_tags: Some(true),
                     include_tag: Some(true),
                     start_date_min: Some(formatted_iso.as_str()),
-                    // volume_num_min: Some(1_000.0),
-                    // liquidity_num_min: Some(100.0),
                     ..Default::default()
                 })
                 .await?;
@@ -231,11 +235,13 @@ impl MyPolymarketClient {
         self.qdrant_client.insert_many_and_search(needed, 100).await
     }
 
-    pub async fn backfill_polymarket_history(&self) -> Result<()> {
-        self.backfill_polymarket_sport_history()
+    pub async fn backfill_polymarket_history(&self, shutdown: CancellationToken) -> Result<()> {
+        let duration = Duration::from_hours(25 * 5);
+        self.backfill_polymarket_sport_history(duration, shutdown.clone())
             .await
             .context("kalshi sport backfill failed")?;
 
+        tracing::info!("polymarket sport backfill completed");
         // others in the future
         Ok(())
     }

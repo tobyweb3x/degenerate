@@ -1,11 +1,55 @@
 package frontend
 
-templ ResolvePage() {
-	@document(resolveMain(), nil)
+import "fmt"
+import "web/protos"
+import "strings"
+
+templ ResolvePage(param []TemplateModel[protos.Ebo_CrossPlatformArb]) {
+	@document(needsResolveMain(param), nil)
 }
 
-templ resolveMain() {
-	<div class="mx-10 overflow-y-auto h-full">
-		<p class="text-2xl font-normal text-left pt-10 pb-8">Similarity Hits</p>
+templ needsResolveMain(param []TemplateModel[protos.Ebo_CrossPlatformArb]) {
+	<div class="mx-3 h-full flex flex-col">
+		<div class="flex gap-3 py-4 tems-center">
+			<p class="text-2xl font-archivoSemiBold text-left shrink-0">Similarity Hits</p>
+			<span class="text-sm font-archivo rounded-full bg-[#FFFFFF4D] px-1.5 py-0.5 text-center w-fit h-fit">
+				{ len(param) }
+			</span>
+		</div>
+		if len(param) != 0 {
+			<section class="ml-2.5 overflow-y-auto min-h-0">
+				<ul class="space-y-3">
+					for i, v := range param {
+						<li class="border-4 border-[#FFFFFF4D] rounded-2xl px-2.5 py-2.5 cursor-pointer text-md">
+							<a href={ templ.URL(fmt.Sprintf("needs/%s", v.CorrelationId)) }>
+								<div class="flex justify-between w-full">
+									<p><span class="font-archivo text-sm">Question:</span> { v.Payload.CrossPlatformArb.Take.Question }</p>
+									<p class="font-extrabold text-xs">{ i+1 }</p>
+								</div>
+								<p><span class="font-archivo text-sm">Outcomes: </span> { v.Payload.CrossPlatformArb.Take.Outcome }</p>
+								<div class="flex gap-8 mt-2.5">
+									<p class="text-xs font-archivo">foundAt: <span class=" text-sm font-archivoSemiBold">{ v.Timestamp.Format("Mon 02 Jan 2006 03:04 PM") } </span></p>
+									<p class="text-xs font-archivo">platform: <span class=" text-sm font-archivoSemiBold">{ strings.Title(v.Payload.CrossPlatformArb.Take.Platform ) }</span></p>
+								</div>
+								<ul class="flex gap-4 pt-2.5 items-baseline">
+									Matches: 
+									for i, j := range v.Payload.CrossPlatformArb.Gives {
+										<li class="text-xs"><span class="rounded-full bg-[#FFFFFF4D] px-2 cursor-pointer" title="djdjdkd">{ i+1 }</span> { fmt.Sprintf("%.2f%%", j.Scored * 100) }</li>
+									}
+								</ul>
+							</a>
+						</li>
+					}
+				</ul>
+			</section>
+		} else {
+			<p class="h-full w-full mx-auto my-auto text-2xl font-dmSans text-center items-center grid place-items-center">No arbs needs resolving</p>
+		}
+	</div>
+}
+
+templ resolveMain(param TemplateModel[*protos.SimilarityHit]) {
+	<div>
+		<p>Resolve for: <span>{ fmt.Sprintf("%s...%s", param.CorrelationId[:5], param.CorrelationId[len(param.CorrelationId)-5:]) }</span></p>
 	</div>
 }

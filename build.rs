@@ -15,8 +15,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     tonic_prost_build::configure()
-        .build_server(true)
-        .build_client(false)
+        .build_server(false)
+        .build_client(true)
         .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
         .field_attribute(
             "similarityhit.QdrantPayload.market_subcategory",

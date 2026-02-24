@@ -28,10 +28,11 @@ message SimilarityHit {
 
 message Ebo {
     string correlation_id = 1;
+    int64 timestamp = 2;
 
-    oneof payload {
-        SimilarityHit cross_platform_arb = 2;
-        SimilarityHit intra_platform_arb = 3;
+    oneof action {
+        SimilarityHit cross_platform_arb = 3;
+        SimilarityHit intra_platform_arb = 4;
     }
 }
 

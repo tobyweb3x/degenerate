@@ -2,14 +2,14 @@ use anyhow::{Ok, Result};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber;
+use tracing_subscriber::{EnvFilter, fmt};
 
 mod app;
-mod arb;
 mod constants;
 mod grpc;
-mod kalshi;
 mod models;
-mod polymarket;
+mod picker;
+mod platforms;
 mod vector_store;
 
 #[tokio::main]
@@ -20,7 +20,9 @@ async fn main() -> Result<()> {
 
     // rustls::crypto::CryptoProvider::install_default().unwrap();
 
-    tracing_subscriber::fmt::init();
+    fmt()
+        .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse().unwrap()))
+        .init();
     dotenvy::dotenv().ok();
 
     let shutdown = CancellationToken::new();
@@ -42,14 +44,22 @@ async fn main() -> Result<()> {
 
     tokio::select! {
         biased;
-        (poly_res, kalshi_res, picker_res, grpc_res) = async {
-            tokio::join!(app_runtime.polymarket_handle, app_runtime.kalshi_handle, app_runtime.picker_handle,app_runtime.grpc_handle)
+        res = async {
+            tokio::try_join!(
+                flatten(app_runtime.polymarket_handle),
+                flatten(app_runtime.kalshi_handle),
+                flatten(app_runtime.grpc_handle),
+                flatten(app_runtime.picker_handle)
+            )
         } => {
-            if let Err(e) = poly_res { tracing::error!("polymarket task panicked: {e:?}"); }
-            if let Err(e) = kalshi_res { tracing::error!("kalshi task panicked: {e:?}"); }
-            if let Err(e) = picker_res { tracing::error!("picker task panicked: {e:?}"); }
-            if let Err(e) = grpc_res { tracing::error!("grpc task panicked: {e:?}"); }
-            tracing::info!("shutdown complete");
+            match res {
+                std::result::Result::Ok(_) => tracing::info!("All tasks finished successfully"),
+                Err(e) => {
+                    tracing::error!("application crashed, a task failed: {:?}", e);
+                    tracing::info!("went with proper cleanup");
+                    // shutdown.cancel();
+                }
+            }
         }
 
         _ = async {
@@ -62,4 +72,11 @@ async fn main() -> Result<()> {
 
     println!("i hope arb was 👍🏿 and 💋");
     Ok(())
+}
+
+async fn flatten(handle: tokio::task::JoinHandle<Result<()>>) -> Result<()> {
+    match handle.await {
+        std::result::Result::Ok(inner_result) => inner_result,
+        Err(join_err) => Err(anyhow::anyhow!("Task Panicked/Cancelled: {}", join_err)),
+    }
 }

@@ -1,5 +1,4 @@
 use crate::constants;
-use crate::models::Todos;
 use crate::models::{self, protos};
 use anyhow::{Context, Ok, Result};
 use candle_core::Device;
@@ -17,6 +16,8 @@ use sentence_transformers_rs::sentence_transformer::{
     SentenceTransformer, SentenceTransformerBuilder, Which,
 };
 use serde_json::json;
+use sha2::Digest;
+use sha2::Sha256;
 use std::convert::TryFrom;
 use std::sync::Arc;
 use tokio::{sync::mpsc, task};
@@ -26,20 +27,20 @@ pub struct VectorStore {
     qudrant_client: Qdrant,
     collection_name: &'static str,
     semantic_model: Arc<SentenceTransformer>,
-    tx: mpsc::Sender<Todos>,
+    tx: mpsc::Sender<protos::Ebo>,
 }
 
 impl VectorStore {
     pub async fn new_metal(
         url: &str,
         collection_name: &'static str,
-        tx: mpsc::Sender<Todos>,
+        tx: mpsc::Sender<protos::Ebo>,
     ) -> Result<Self> {
         let device =
             candle_core::Device::new_metal(0).context("metal device initialization failed")?;
 
         let vs = Self::new(url, collection_name, device, tx).await?;
-        tracing::debug!("succesfully setup vector store");
+        tracing::info!("succesfully setup vector store");
         Ok(vs)
     }
 
@@ -47,7 +48,7 @@ impl VectorStore {
         url: &str,
         collection_name: &'static str,
         device: Device,
-        tx: mpsc::Sender<Todos>,
+        tx: mpsc::Sender<protos::Ebo>,
     ) -> Result<Self> {
         let client = Qdrant::from_url(url)
             .skip_compatibility_check()
@@ -106,7 +107,7 @@ impl VectorStore {
             .await
             .context("failed to enable HNSW indexing")?;
 
-        tracing::debug!("payload-index enabled");
+        tracing::info!("payload-index enabled");
         Ok(())
     }
 
@@ -146,7 +147,6 @@ impl VectorStore {
             .await
             .context(format!("qdrant index error on {}", FIELD_END_DATE))?;
 
-        tracing::debug!("payload index setup succesfully");
         Ok(())
     }
 
@@ -243,10 +243,18 @@ impl VectorStore {
             return Ok(());
         }
 
+        let clone_take = take.clone();
         let hit = protos::SimilarityHit::try_from_results(take, response.result)?;
 
         self.tx
-            .send(models::Todos::CrossPlatformSimilarityHit(hit))
+            .send(protos::Ebo {
+                correlation_id: hex::encode(Sha256::digest(format!(
+                    "{}:{}:{}",
+                    clone_take.uuid, clone_take.question, clone_take.market_id
+                ))),
+                timestamp: chrono::Utc::now().timestamp(),
+                action: Some(protos::ebo::Action::CrossPlatformArb(hit)),
+            })
             .await
             .context("error sending to channel")?;
         Ok(())
@@ -304,9 +312,18 @@ impl VectorStore {
                 continue;
             }
 
+            let clone_take = take.clone();
             let hit = protos::SimilarityHit::try_from_results(take, response.result)?;
+
             self.tx
-                .send(models::Todos::CrossPlatformSimilarityHit(hit))
+                .send(protos::Ebo {
+                    correlation_id: hex::encode(Sha256::digest(format!(
+                        "{}:{}:{}",
+                        clone_take.uuid, clone_take.question, clone_take.market_id
+                    ))),
+                    timestamp: chrono::Utc::now().timestamp(),
+                    action: Some(protos::ebo::Action::CrossPlatformArb(hit)),
+                })
                 .await
                 .context("error sending to channel")?;
         }
