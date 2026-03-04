@@ -1,3 +1,4 @@
+use super::utils;
 use crate::constants;
 use crate::models::{self, QdrantMarketConverter, protos};
 use crate::vector_store;
@@ -57,6 +58,8 @@ impl MyKalshiClient {
         let duration = Duration::from_mins(6);
         let mut six_minute_ticker = tokio::time::interval(duration);
         let mut ws_is_alive = true;
+        
+        six_minute_ticker.tick().await; // fires first tick
         loop {
             tokio::select! {
                   _ = shutdown.cancelled() => {
@@ -66,7 +69,7 @@ impl MyKalshiClient {
                   }
 
                 _ = six_minute_ticker.tick() => {
-                    println!("six min triggers");
+                    println!("kalshi six min triggers");
                         let _ = self.backfill_kalshi_sport_history(duration, CancellationToken::new()).await
                         .inspect_err(|e|  tracing::error!("error handling kalshi msg: {e:?}"));
                      }
@@ -137,18 +140,20 @@ impl MyKalshiClient {
                     .get_series_by_ticker(event.event.series_ticker.as_str())
                     .await?;
 
-                let market = Self::sort_kalshi_tags(series.series)?;
-                let payload = protos::QdrantPayload::from_market(
+                let Some(market) = Self::sort_kalshi_tags(series.series) else {
+                    return Ok(());
+                };
+
+                let qdrant_payload = protos::QdrantPayload::from_market(
                     value.market,
                     market.info().category,
                     market.info().subcategory,
                 );
 
-                let data = models::QdrantPointData::new(payload)?;
                 self.qdrant_client
                     .insert_and_search(
-                        data,
-                        constants::SIMILARITY_SCORE_THRESHOLD,
+                        qdrant_payload,
+                        vector_store::SIMILARITY_SCORE_THRESHOLD,
                         vector_store::VectorStore::create_cross_platform_filter(
                             Some(constants::PLATFORM_KALSHI.to_string()),
                             &market,
@@ -178,28 +183,29 @@ impl MyKalshiClient {
         Ok(())
     }
 
-    fn sort_kalshi_tags(series_data: Series) -> Result<models::MarketTag> {
+    fn sort_kalshi_tags(series_data: Series) -> Option<models::MarketTag> {
         let Some(tags) = series_data.tags else {
-            anyhow::bail!("no tag found")
+            return None;
         };
 
         for tag in tags {
             match tag.as_str().trim() {
                 tag if tag == models::MarketTag::EPL.info().kalshi_identifier => {
-                    return Ok(models::MarketTag::EPL);
+                    return Some(models::MarketTag::EPL);
                 }
                 tag if tag == models::MarketTag::NBA.info().kalshi_identifier => {
-                    return Ok(models::MarketTag::NBA);
+                    return Some(models::MarketTag::NBA);
                 }
                 tag if tag == models::MarketTag::NFL.info().kalshi_identifier => {
-                    return Ok(models::MarketTag::NFL);
+                    return Some(models::MarketTag::NFL);
                 }
 
                 _ => {}
             }
         }
 
-        anyhow::bail!("no supported tag found(kalshi")
+        // anyhow::bail!("no supported tag found(kalshi")
+        None
     }
 
     pub async fn backfill_kalshi_sport_history(
@@ -346,15 +352,13 @@ impl MyKalshiClient {
             }
         }
 
-        let payload = protos::QdrantPayload::from_markets(
+        let qdrant_payloads = protos::QdrantPayload::from_markets(
             container,
             market.info().category,
             market.info().subcategory,
         );
 
-        let data_list = models::QdrantPointData::new_many(payload)?;
-
-        let needed = data_list
+        let needed = qdrant_payloads
             .into_iter()
             .map(|point| {
                 let filter = vector_store::VectorStore::create_cross_platform_filter(
@@ -369,7 +373,31 @@ impl MyKalshiClient {
     }
 
     pub async fn backfill_kalshi_history(&self, shutdown: CancellationToken) -> Result<()> {
-        let duration = Duration::from_hours(25 * 5);
+        let last_insert = self
+            .qdrant_client
+            .get_last_insert_time(constants::PLATFORM_KALSHI)
+            .await?;
+
+        let duration = match last_insert {
+            Some(date) => {
+                let diff = chrono::Utc::now() - date;
+
+                diff.to_std().unwrap_or(std::time::Duration::from_secs(0))
+                    + std::time::Duration::from_secs(3600)
+            }
+            None => {
+                tracing::info!(
+                    "no history found in Qdrant for kalshi, doing full initial backfill."
+                );
+                std::time::Duration::from_secs(25 * 3600 * 5)
+            }
+        };
+
+        tracing::info!(
+            "starting backfill for kalshi from {}",
+            utils::format_duration_ago(duration)
+        );
+
         self.backfill_kalshi_sport_history(duration, shutdown)
             .await
             .context("kalshi sport backfill failed")?;

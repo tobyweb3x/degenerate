@@ -10,6 +10,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type GrpcServer struct {
@@ -50,6 +51,7 @@ func (s *GrpcServer) Esu(stream protos.EsuOdara_EsuServer) error {
 			reply, err := s.app.ProcessEbo(ctx, msg)
 			if err != nil {
 				log.Printf("error processing Ebo from grpc client: %s", err.Error())
+				continue
 			}
 
 			select {
@@ -91,15 +93,25 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.Ebo) (*protos.Ebo, err
 
 	case *protos.Ebo_CrossPlatformArb:
 		hit := p.CrossPlatformArb
-		byteData, err := protoMarshaler.Marshal(hit)
+
+		fmt.Printf("PROTO BEFORE JSON:\n%+v\n\n", hit)
+
+		byteData, err := protojson.Marshal(hit)
 		if err != nil {
 			return nil, err
 		}
 
+		var h protos.SimilarityHit
+		if err := protojson.Unmarshal(byteData, &h); err != nil {
+			fmt.Println("it errrored", err.Error())
+		}
+
+		fmt.Printf("PROTO AFTER JSON:\n\n%+v\n\n", hit)
+
 		return nil, a.db.InsertNewNeedsResolveCrossArbs(
 			ctx,
 			ebo.CorrelationId,
-			time.Unix(ebo.Timestamp, 0).UTC(),
+			time.UnixMilli(ebo.ArbFoundAt).UTC(),
 			byteData,
 		)
 
@@ -113,7 +125,7 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.Ebo) (*protos.Ebo, err
 		return nil, a.db.InsertNewNeedsResolvedIntraArbs(
 			ctx,
 			ebo.CorrelationId,
-			time.Unix(ebo.Timestamp, 0).UTC(),
+			time.UnixMilli(ebo.ArbFoundAt).UTC(),
 			byteData,
 		)
 

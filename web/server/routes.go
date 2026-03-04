@@ -21,8 +21,10 @@ func (a *App) Routes() *chi.Mux {
 
 	r.Get("/", a.dashboardPage)
 	r.Get("/dashboard", a.dashboardPage)
-	r.Get("/resolve", a.needsResolvePage)
+	r.Post("/resolve/submit", a.resolveSubmit)
 	r.Get("/resolve/{correlationId}", a.resolvePage)
+	r.Get("/resolve", a.needsResolvePage)
+	r.Post("/delete/{correlationId}", a.deleteNeedsResolve)
 
 	var staticFiles = fs.FS(frontend.AssetsDir)
 	staticFs, _ := fs.Sub(staticFiles, "public/assets")

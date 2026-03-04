@@ -1,42 +1,68 @@
 package frontend
 
-import "fmt"
-import "web/protos"
-import "strings"
+import (
+	"fmt"
+	"strings"
+	"web/protos"
+)
 
-templ ResolvePage(param []TemplateModel[protos.Ebo_CrossPlatformArb]) {
-	@document(needsResolveMain(param), nil)
+templ NeedsResolvePage(param []TemplateModel[protos.Ebo_CrossPlatformArb]) {
+	@document(NeedsResolvePartial(param), nil)
 }
 
-templ needsResolveMain(param []TemplateModel[protos.Ebo_CrossPlatformArb]) {
-	<div class="mx-3 h-full flex flex-col">
-		<div class="flex gap-3 py-4 tems-center">
-			<p class="text-2xl font-archivoSemiBold text-left shrink-0">Similarity Hits</p>
-			<span class="text-sm font-archivo rounded-full bg-[#FFFFFF4D] px-1.5 py-0.5 text-center w-fit h-fit">
+templ NeedsResolvePartial(param []TemplateModel[protos.Ebo_CrossPlatformArb]) {
+	<div class="mx-3 h-full flex flex-col" id="needsResolve">
+		<div class="flex gap-3 py-4 justify-center items-center w-fit">
+			<p class="text-2xl font-archivoSemiBold text-left">Similarity Hits</p>
+			<p class="text-sm font-archivo rounded-full bg-[#FFFFFF4D] px-1.5 py-0.5 text-center w-fit h-fit">
 				{ len(param) }
-			</span>
+			</p>
 		</div>
-		if len(param) != 0 {
+		if len(param) > 0 {
 			<section class="ml-2.5 overflow-y-auto min-h-0">
 				<ul class="space-y-3">
 					for i, v := range param {
-						<li class="border-4 border-[#FFFFFF4D] rounded-2xl px-2.5 py-2.5 cursor-pointer text-md">
-							<a href={ templ.URL(fmt.Sprintf("needs/%s", v.CorrelationId)) }>
+						if v.Payload.CrossPlatformArb == nil {
+							continue
+						}
+						<li
+							class="border-4 border-white/30 rounded-2xl px-2.5 py-2.5 text-md transition-colors duration-150 hover:bg-white/5 cursor-pointer"
+						>
+							<a hx-get={ templ.SafeURL(fmt.Sprintf("/resolve/%s", v.CorrelationId)) } hx-trigger="click" hx-target="#needsResolve" hx-swap="outerHTML" hx-push-url="true">
 								<div class="flex justify-between w-full">
-									<p><span class="font-archivo text-sm">Question:</span> { v.Payload.CrossPlatformArb.Take.Question }</p>
+									<p><span class="font-archivo text-sm">Question:</span> { v.Payload.CrossPlatformArb.Anchor.Question }</p>
 									<p class="font-extrabold text-xs">{ i+1 }</p>
 								</div>
-								<p><span class="font-archivo text-sm">Outcomes: </span> { v.Payload.CrossPlatformArb.Take.Outcome }</p>
+								<p><span class="font-archivo text-sm">Outcomes: </span> { v.Payload.CrossPlatformArb.Anchor.Outcome }</p>
 								<div class="flex gap-8 mt-2.5">
-									<p class="text-xs font-archivo">foundAt: <span class=" text-sm font-archivoSemiBold">{ v.Timestamp.Format("Mon 02 Jan 2006 03:04 PM") } </span></p>
-									<p class="text-xs font-archivo">platform: <span class=" text-sm font-archivoSemiBold">{ strings.Title(v.Payload.CrossPlatformArb.Take.Platform ) }</span></p>
+									<p class="text-xs font-archivo">foundAt: <span class=" text-sm font-archivoSemiBold">{ v.ArbFoundAt.Format("Mon 02 Jan 2006 03:04 PM") } </span></p>
+									<p class="text-xs font-archivo">platform: <span class=" text-sm font-archivoSemiBold">{ strings.Title(v.Payload.CrossPlatformArb.Anchor.Platform ) }</span></p>
 								</div>
-								<ul class="flex gap-4 pt-2.5 items-baseline">
-									Matches: 
-									for i, j := range v.Payload.CrossPlatformArb.Gives {
-										<li class="text-xs"><span class="rounded-full bg-[#FFFFFF4D] px-2 cursor-pointer" title="djdjdkd">{ i+1 }</span> { fmt.Sprintf("%.2f%%", j.Scored * 100) }</li>
-									}
-								</ul>
+								<section class="flex justify-between items-center">
+									<ul class="flex  gap-4 pt-2.5 items-baseline">
+										Matches: 
+										for i, j := range v.Payload.CrossPlatformArb.Matches {
+											<li class="text-xs"><span class="rounded-full bg-[#FFFFFF4D] px-2 cursor-pointer" title="$$$$$$$$">{ i+1 }</span> { fmt.Sprintf("%.2f%%", j.Scored * 100) }</li>
+										}
+									</ul>
+									<button
+										type="button"
+										hx-post={ templ.SafeURL(fmt.Sprintf("/delete/%s", v.CorrelationId)) }
+										hx-target="#needsResolve"
+										hx-swap="outerHTML"
+										hx-confirm="Are you sure you want to delete this hit?"
+										hx-trigger="click consume"
+										hx-push-url="false"
+										class="w-fit 
+											transition-all duration-150
+											hover:bg-red-500/20
+											hover:ring-1 hover:ring-red-400
+											rounded-full
+											cursor-pointer"
+									>
+										<img src="/assets/svg/delete-red.svg" alt="" class="w-6 aspect-square"/>
+									</button>
+								</section>
 							</a>
 						</li>
 					}
@@ -48,8 +74,286 @@ templ needsResolveMain(param []TemplateModel[protos.Ebo_CrossPlatformArb]) {
 	</div>
 }
 
-templ resolveMain(param TemplateModel[*protos.SimilarityHit]) {
-	<div>
-		<p>Resolve for: <span>{ fmt.Sprintf("%s...%s", param.CorrelationId[:5], param.CorrelationId[len(param.CorrelationId)-5:]) }</span></p>
+templ ResolvePage(param TemplateModel[protos.Ebo_CrossPlatformArb]) {
+	@document(ResolvePartial(param), nil)
+}
+
+templ ResolvePartial(param TemplateModel[protos.Ebo_CrossPlatformArb]) {
+	<div id="resolve" class="grid grid-cols-[1fr_auto] h-full gap-2.5">
+		<section id="listings" class="h-full flex flex-col overflow-hidden">
+			<div class="shrink-0">
+				<div class="flex gap-1 justify-center items-center w-fit mr-auto">
+					<a hx-get={ templ.SafeURL("/resolve") } hx-target="#resolve" hx-swap="outerHTML" hx-push-url="true">
+						<img
+							src="/assets/svg/ArrowLeft.svg"
+							alt=""
+							class="w-6 aspect-square cursor-pointer"
+						/>
+					</a>
+					<p class=" text-lg font-archivoSemiBold font-bold tracking-[0.001em] text-left">Back</p>
+				</div>
+				<p class="mt-6 font-dmSans font-extralight text-sm">Resolve for: <span class="font-bold font-archivoSemiBold text-base">{ shortenID(param.CorrelationId) }</span></p>
+				<div class="mt-2">
+					<div class="flex w-full justify-between item">
+						<p class="font-archivoSemiBold font-extralight text-xl">Anchor:</p>
+						<button
+							type="button"
+							hx-post={ templ.SafeURL(fmt.Sprintf("/delete/%s", param.CorrelationId)) }
+							hx-target="#resolve"
+							hx-swap="outerHTML"
+							hx-confirm="Are you sure you want to delete this hit?"
+							hx-trigger="click consume"
+							hx-push-url="/resolve"
+							class="w-fit 
+								transition-all duration-150
+								hover:bg-red-500/20
+								hover:ring-1 hover:ring-red-400
+								rounded-full
+								cursor-pointer"
+						>
+							<img src="/assets/svg/delete-red.svg" alt="" class="w-6 aspect-square"/>
+						</button>
+					</div>
+					{{ anchorOutcomes := parseOutcomes(param.Payload.CrossPlatformArb.Anchor.Outcome) }}
+					<div class="border-2 border-[#FFFFFF4D] rounded-2xl p-2.5 mt-2.5 text-md">
+						<p><span class="font-archivo text-sm">Question:</span> { param.Payload.CrossPlatformArb.Anchor.Question }</p>
+						<p><span class="font-archivo text-sm">Outcomes: </span> { param.Payload.CrossPlatformArb.Anchor.Outcome }</p>
+						<div class="flex gap-8 mt-2.5">
+							<p class="text-xs font-dmSans">EndDate: <span class=" text-sm font-archivoSemiBold">{ param.Payload.CrossPlatformArb.Anchor.EndDate } </span></p>
+							<p class="text-xs font-archivo">platform: <span class=" text-sm font-archivoSemiBold">{ strings.Title(param.Payload.CrossPlatformArb.Anchor.Platform ) }</span></p>
+						</div>
+						<p class="font-extrabold font-archivoSemiBold text-sm mt-3">Rules:</p>
+						<p class="font-dmSans text-sm">{ param.Payload.CrossPlatformArb.Anchor.Rules }</p>
+					</div>
+				</div>
+			</div>
+			<div class="mt-4 flex-1 min-h-0 flex flex-col">
+				<p class="font-archivo font-extralight text-lg">Matches <span>({ len( param.Payload.CrossPlatformArb.Matches) })</span>:</p>
+				<div class="overflow-y-auto h-full">
+					<ul class="space-y-2.5 mt-2.5 pb-5">
+						for i, v := range param.Payload.CrossPlatformArb.Matches {
+							{{ matchOutcomes := parseOutcomes(v.Match.Outcome) }}
+							<li class="border-2 border-[#FFFFFF4D] rounded-2xl px-2.5 py-2.5 text-md transition-all duration-300" id={ fmt.Sprintf("match-row-%s", v.Match.Uuid) }>
+								<div class="flex flex-row justify-between">
+									<div>
+										<p class="text-sm font-dmSans font-bold"><span class="font-archivo text-sm">Question:</span> { v.Match.Question }</p>
+										<p class="text-sm font-dmSans font-bold"><span class="font-archivo text-sm">Outcomes: </span> { v.Match.Outcome }</p>
+										<p><span class="font-archivo text-sm">Match: </span> { fmt.Sprintf("%.2f%%", v.Scored * 100) }</p>
+										<div class="flex gap-8 mt-2.5">
+											<p class="text-xs font-dmSans">EndDate: <span class="text-sm font-archivoSemiBold">{ param.Payload.CrossPlatformArb.Anchor.EndDate } </span></p>
+											<p class="text-xs font-archivo">platform: <span class="text-sm font-archivoSemiBold">{ strings.Title(param.Payload.CrossPlatformArb.Anchor.Platform ) }</span></p>
+										</div>
+									</div>
+									<section class="pr-2 flex flex-col items-end gap-2">
+										<p class="font-extrabold text-xs text-right">#{ fmt.Sprintf("%d", i+1) }</p>
+										<div class="pr-7 flex flex-col h-fit items-center gap-3.5">
+											<select
+												id={ fmt.Sprintf("select-%s", v.Match.Uuid) }
+												class="bg-black border border-gray-600 rounded p-1 text-xs mt-2 outline-green-600 cursor-pointer"
+												_="on change 
+													if my value is not empty 
+														remove @disabled from next <button/> 
+														remove .opacity-50 from next <button/>
+														remove .cursor-not-allowed from next <button/>
+														add .cursor-pointer to next <button/>
+													else 
+														add @disabled to next <button/> 
+														add .opacity-50 to next <button/>
+														add .cursor-not-allowed to next <button/>
+														remove .cursor-pointer from next <button/>
+													end"
+											>
+												<option value="">select leg</option>
+												<optgroup label={ fmt.Sprintf("Anchor: %s", getOutcomeByIndex(anchorOutcomes, 0)) }>
+													<option
+														value={ fmt.Sprintf("%s|0|0", v.Match.Uuid) }
+														data-anum={ fmt.Sprintf("%d", i+1) }
+														data-aname={ getOutcomeByIndex(anchorOutcomes, 0) }
+														data-mname={ getOutcomeByIndex(matchOutcomes, 0) }
+													>
+														Match Leg 0
+													</option>
+													<option
+														value={ fmt.Sprintf("%s|0|1", v.Match.Uuid) }
+														data-anum={ fmt.Sprintf("%d", i+1) }
+														data-aname={ getOutcomeByIndex(anchorOutcomes, 0) }
+														data-mname={ getOutcomeByIndex(matchOutcomes, 1) }
+													>
+														Match Leg 1
+													</option>
+												</optgroup>
+												<!-- ANCHOR LEG 1 -->
+												<optgroup label={ fmt.Sprintf("Anchor: %s", getOutcomeByIndex(anchorOutcomes, 1)) }>
+													<option
+														value={ fmt.Sprintf("%s|1|0", v.Match.Uuid) }
+														data-anum={ fmt.Sprintf("%d", i+1) }
+														data-aname={ getOutcomeByIndex(anchorOutcomes, 1) }
+														data-mname={ getOutcomeByIndex(matchOutcomes, 0) }
+													>
+														Match Leg 0
+													</option>
+													<option
+														value={ fmt.Sprintf("%s|1|1", v.Match.Uuid) }
+														data-anum={ fmt.Sprintf("%d", i+1) }
+														data-aname={ getOutcomeByIndex(anchorOutcomes, 1) }
+														data-mname={ getOutcomeByIndex(matchOutcomes, 1) }
+													>
+														Match Leg 1
+													</option>
+												</optgroup>
+											</select>
+											<button
+												type="button"
+												disabled
+												class="bg-purple-800 hover:bg-purple-500 text-white text-xs px-3 py-1 rounded transition-colors add-btn opacity-50 cursor-not-allowed"
+												data-uuid={ v.Match.Uuid }
+												data-question={ v.Match.Question }
+												onclick="addToPick(this)"
+											>
+												Add to Picks
+											</button>
+											<span class="text-green-400 text-xs font-bold hidden added-label">
+												✓ Added
+											</span>
+										</div>
+									</section>
+								</div>
+								<p class="font-extrabold font-archivoSemiBold text-sm mt-3">Rules:</p>
+								<p class="font-dmSans text-sm">{ param.Payload.CrossPlatformArb.Anchor.Rules }</p>
+							</li>
+						}
+					</ul>
+				</div>
+			</div>
+		</section>
+		<section id="picks" class="w-80 h-full min-h-0 border-l border-[#FFFFFF20] bg-[#06001B] flex flex-col">
+			<form hx-post="/resolve/submit" hx-target="#mainContent" class="flex flex-col h-full min-h-0">
+				<input type="hidden" name="correlation_id" value={ param.CorrelationId }/>
+				<div class="p-4 border-b border-[#FFFFFF20] shrink-0">
+					<p class="text-xl font-archivoSemiBold">Selected Picks</p>
+				</div>
+				<div id="picks-container" class="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+					<p id="empty-msg" class="text-sm text-gray-500 text-center mt-10">
+						No picks yet.
+					</p>
+				</div>
+				<div class="p-4 border-t border-[#FFFFFF20] shrink-0">
+					<button type="submit" class="w-full cursor-pointer bg-purple-800 hover:bg-purple-500 text-white font-bold py-3 px-4 rounded-xl">
+						Submit Legs
+					</button>
+				</div>
+			</form>
+		</section>
+		<template id="pick-item-template">
+			<div class="pick-item bg-[#FFFFFF10] rounded-lg p-3 relative group animate-in fade-in zoom-in-95 duration-200 border border-[#FFFFFF20]">
+				<input type="hidden" name="selections[]" class="pick-input"/>
+				<div class="flex justify-between items-center mb-2 pb-2 border-b border-[#FFFFFF10]">
+					<span class="text-sm font-bold text-white pick-title">Match #?</span>
+					<button type="button" class="text-gray-400 hover:text-red-400 pick-remove-btn transition-colors">✕</button>
+				</div>
+				<div class="bg-black/30 rounded p-2.5 flex flex-col gap-3">
+					<div>
+						<p class="text-gray-500 text-[10px] font-bold uppercase tracking-wider mb-1">Anchor</p>
+						<p class="font-mono text-amber-300 text-xs font-medium warap-break-words leading-tight pick-anchor-leg">?</p>
+					</div>
+					<div>
+						<p class="text-gray-500 text-[10px] font-bold uppercase tracking-wider mb-1">Match</p>
+						<p class="font-mono text-purple-300 text-xs font-medium warap-break-words leading-tight pick-match-leg">?</p>
+					</div>
+				</div>
+			</div>
+		</template>
+		<script>
+			function addToPick(btn) {
+				const uuid = btn.getAttribute('data-uuid');
+				const selectEl = document.getElementById("select-" + uuid);
+				
+                // 1. Get Selected Option Data
+                const selectedOption = selectEl.options[selectEl.selectedIndex];
+                
+                // Value sent to backend: "uuid|0|0"
+				const value = selectEl.value; 
+                
+                // Display Data for Sidebar:
+                const anchorName = selectedOption.dataset.aname;
+                const matchName = selectedOption.dataset.mname;
+                const matchNum = selectedOption.dataset.anum;
+
+                // --- DOM Operations ---
+				const template = document.getElementById('pick-item-template');
+				const clone = template.content.cloneNode(true);
+				const rootDiv = clone.querySelector('.pick-item');
+				
+				rootDiv.id = "pick-item-" + uuid;
+				
+                // Set the CLEAN value for form submission
+                clone.querySelector('.pick-input').value = value;
+                
+                // Use the data attributes for the UI
+                clone.querySelector('.pick-title').textContent = "Match #" + matchNum;
+                clone.querySelector('.pick-anchor-leg').textContent = anchorName;
+                clone.querySelector('.pick-match-leg').textContent = matchName;
+
+				// Bind Remove
+				clone.querySelector('.pick-remove-btn').onclick = function() { removeFromPick(uuid); };
+
+				// Append
+				const container = document.getElementById('picks-container');
+				document.getElementById('empty-msg').classList.add('hidden');
+				container.appendChild(clone);
+
+				// Toggle UI
+				const row = document.getElementById("match-row-" + uuid);
+				row.classList.add("border-green-500", "bg-[#FFFFFF05]");
+				btn.classList.add("hidden");
+				row.querySelector(".added-label").classList.remove("hidden");
+				selectEl.disabled = true;
+			}
+
+            // Remove function stays the same...
+			function removeFromPick(uuid) {
+				const item = document.getElementById("pick-item-" + uuid);
+				if (item) item.remove();
+
+				const container = document.getElementById('picks-container');
+				if (container.children.length <= 1) { 
+					document.getElementById('empty-msg').classList.remove('hidden');
+				}
+
+				const row = document.getElementById("match-row-" + uuid);
+				if (row) {
+					row.classList.remove("border-green-500", "bg-[#FFFFFF05]");
+        
+					// 2. Reset Button State (The fix)
+					const btn = row.querySelector(".add-btn");
+					btn.classList.remove("hidden");           // Show button
+					btn.classList.remove("cursor-pointer");   // Remove pointer cursor
+					btn.classList.add("opacity-50", "cursor-not-allowed"); // Add dull styles
+					btn.disabled = true;                      // Disable interaction
+
+					// 3. Hide "Added" Label
+					row.querySelector(".added-label").classList.add("hidden");
+
+					// 4. Reset Select
+					const select = document.getElementById("select-" + uuid);
+					select.disabled = false;
+					select.value = "";  
+				}
+			}
+        </script>
 	</div>
+}
+
+func parseOutcomes(raw string) []string {
+	return strings.Split(raw, ",")
+}
+
+func getOutcomeByIndex(outcomes []string, idx int) string {
+	if idx >= 0 && idx < len(outcomes) {
+		s := strings.TrimSpace(outcomes[idx])
+		r := strings.NewReplacer("[", "", "]", "")
+
+		return r.Replace(s)
+	}
+	return "?"
 }

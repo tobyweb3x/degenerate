@@ -17,7 +17,7 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
     // vector store
     let vector_store = vector_store::VectorStore::new_metal(
         "http://localhost:6334",
-        "arb_hit",
+        vector_store::COLLECTION_NAME,
         bot_to_grpc_tx.clone(),
     )
     .await
@@ -39,7 +39,6 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
     let picker_shutdown = shutdown.clone();
     let clone_bot_to_grpc_tx = bot_to_grpc_tx.clone();
     let picker_handle = tokio::spawn(async move {
-        tracing::info!("picker thread spawn");
         let mut picker = picker::Picker::new(platforms, grpc_to_bot_rx, clone_bot_to_grpc_tx);
         picker.run_picker(picker_shutdown).await
     });
@@ -55,19 +54,23 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
 
     // // kalshi backfill
     let kalshi_backfill_shutdown = shutdown.clone();
-    // tokio::spawn(async move {
-    let _ = kalshi_client
-        .backfill_kalshi_history(kalshi_backfill_shutdown)
-        .await
-        .inspect_err(|e| tracing::error!("kalshi backfill failed: {e}"));
-    // });
+    let cloned_kalshi_client = kalshi_client.clone();
+    tokio::spawn(async move {
+        let _ = cloned_kalshi_client
+            .backfill_kalshi_history(kalshi_backfill_shutdown)
+            .await
+            .inspect_err(|e| tracing::error!("kalshi backfill failed: {e}"));
+    });
 
-    
     // polymarket bacfill
-    let _ = polymarket_client
-        .backfill_polymarket_history(shutdown.clone())
-        .await
-        .inspect_err(|e| tracing::error!("polymarket backfill failed: {e}"));
+    let polymarket_backfill_shutdown = shutdown.clone();
+    let cloned_polymarket_client = polymarket_client.clone();
+    tokio::spawn(async move {
+        let _ = cloned_polymarket_client
+            .backfill_polymarket_history(polymarket_backfill_shutdown.clone())
+            .await
+            .inspect_err(|e| tracing::error!("polymarket backfill failed: {e}"));
+    });
 
     let polymarket_shutdown = shutdown.clone();
     let polymarket_handle = tokio::spawn(async move {

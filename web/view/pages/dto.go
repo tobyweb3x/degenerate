@@ -2,6 +2,7 @@ package frontend
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 	"web/protos"
 	"web/service/repository/postgres"
@@ -10,7 +11,7 @@ import (
 // TemplateModel is a generic container for any Ebo payload type
 type TemplateModel[T any] struct {
 	CorrelationId string
-	Timestamp     time.Time
+	ArbFoundAt    time.Time
 	Payload       T
 }
 
@@ -28,12 +29,13 @@ func FromCrossPlatformArbs(
 		}
 
 		if err := json.Unmarshal(v.SimilarityHit, &hit); err != nil {
+			fmt.Println("it from here")
 			return nil, err
 		}
 
 		r = append(r, TemplateModel[protos.Ebo_CrossPlatformArb]{
 			CorrelationId: v.CorrelationID,
-			Timestamp:     v.Timestamp.Time,
+			ArbFoundAt:    v.ArbFoundAt.Time,
 			Payload:       protos.Ebo_CrossPlatformArb{CrossPlatformArb: &hit},
 		})
 	}

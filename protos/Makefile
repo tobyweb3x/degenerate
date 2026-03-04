@@ -11,4 +11,4 @@ golang:
 		$(PROTO_FILES)
 	@echo "✅ Go protos generated in $(GO_OUT_DIR)"
 
-	
+	 

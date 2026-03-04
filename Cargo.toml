@@ -24,7 +24,7 @@ chrono = "0.4.43"
 qdrant-client = "1.16.0"
 candle-core = "0.9.2"
 sentence-transformers-rs ={ path = "../libs/sentence-transformers-rs", features = ["metal"]}
-uuid = { version = "1.0", features = ["v4", "serde"] } # Enables v4 generation and Serde support
+uuid = { version = "1.0", features = ["v5", "serde"] }
 governor = "0.10.4"
 rustls = { version = "0.23.36", features = ["aws_lc_rs"] }
 tonic = {version = "0.14.4", features = ["transport"]}

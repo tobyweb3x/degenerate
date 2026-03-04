@@ -53,7 +53,7 @@ async fn main() -> Result<()> {
             )
         } => {
             match res {
-                std::result::Result::Ok(_) => tracing::info!("All tasks finished successfully"),
+                std::result::Result::Ok(_) => tracing::info!("all tasks finished successfully"),
                 Err(e) => {
                     tracing::error!("application crashed, a task failed: {:?}", e);
                     tracing::info!("went with proper cleanup");

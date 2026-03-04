@@ -29,7 +29,7 @@ func NewService(postgresDb PostgresDb) *Repository {
 func (r *Repository) InsertNewNeedsResolveCrossArbs(ctx context.Context, correctionId string, timestamp time.Time, similarityHit []byte) error {
 	return r.dbQuery.InsertNeedsResolve(ctx, postgres.InsertNeedsResolveParams{
 		CorrelationID: correctionId,
-		Timestamp: pgtype.Timestamptz{
+		ArbFoundAt: pgtype.Timestamptz{
 			Time:             timestamp,
 			InfinityModifier: pgtype.Finite,
 			Valid:            true,
@@ -42,7 +42,7 @@ func (r *Repository) InsertNewNeedsResolveCrossArbs(ctx context.Context, correct
 func (r *Repository) InsertNewNeedsResolvedIntraArbs(ctx context.Context, correctionId string, timestamp time.Time, similarityHit []byte) error {
 	return r.dbQuery.InsertNeedsResolve(ctx, postgres.InsertNeedsResolveParams{
 		CorrelationID: correctionId,
-		Timestamp: pgtype.Timestamptz{
+		ArbFoundAt: pgtype.Timestamptz{
 			Time:             timestamp,
 			InfinityModifier: pgtype.Finite,
 			Valid:            true,
@@ -56,15 +56,19 @@ func (r *Repository) GetAllCrossArbs(ctx context.Context) ([]postgres.NeedsResol
 	return r.dbQuery.GetRecentCrossArbs(ctx, 1_000)
 }
 
-func (r *Repository) GetNeedsResolveByCorrelationID(ctx context.Context, correctionId string) (*postgres.NeedsResolve, error) {
+func (r *Repository) GetNeedsResolveByCorrelationID(ctx context.Context, correctionId string) (postgres.NeedsResolve, error) {
 	needsResolved, err := r.dbQuery.GetNeedsResolveByCorrelationID(ctx, correctionId)
 	if err != nil {
-		return nil, err
+		return postgres.NeedsResolve{}, err
 	}
 
-	return &needsResolved, nil
+	return needsResolved, nil
 }
 
 func (r *Repository) BulkInsertNewNeedsResolve(ctx context.Context, bulk ...postgres.BulkInsertNeedsResolveParams) (int64, error) {
 	return r.dbQuery.BulkInsertNeedsResolve(ctx, bulk)
+}
+
+func (r *Repository) DeleteNeedsResolve(ctx context.Context, correctionID string) error {
+	return r.dbQuery.DeleteNeedsResolve(ctx, correctionID)
 }

@@ -13,7 +13,7 @@ import (
 
 type BulkInsertNeedsResolveParams struct {
 	CorrelationID string             `json:"correlation_id"`
-	Timestamp     pgtype.Timestamptz `json:"timestamp"`
+	ArbFoundAt    pgtype.Timestamptz `json:"arb_found_at"`
 	SimilarityHit []byte             `json:"similarity_hit"`
 	ArbType       string             `json:"arb_type"`
 }
@@ -29,7 +29,7 @@ func (q *Queries) DeleteNeedsResolve(ctx context.Context, correlationID string) 
 }
 
 const getNeedsResolveByCorrelationID = `-- name: GetNeedsResolveByCorrelationID :one
-SELECT id, correlation_id, timestamp, similarity_hit, arb_type, created_at
+SELECT id, correlation_id, arb_found_at, similarity_hit, arb_type, created_at
 FROM needs_resolve
 WHERE correlation_id = $1
 `
@@ -40,7 +40,7 @@ func (q *Queries) GetNeedsResolveByCorrelationID(ctx context.Context, correlatio
 	err := row.Scan(
 		&i.ID,
 		&i.CorrelationID,
-		&i.Timestamp,
+		&i.ArbFoundAt,
 		&i.SimilarityHit,
 		&i.ArbType,
 		&i.CreatedAt,
@@ -49,7 +49,7 @@ func (q *Queries) GetNeedsResolveByCorrelationID(ctx context.Context, correlatio
 }
 
 const getRecentCrossArbs = `-- name: GetRecentCrossArbs :many
-SELECT id, correlation_id, timestamp, similarity_hit, arb_type, created_at
+SELECT id, correlation_id, arb_found_at, similarity_hit, arb_type, created_at
 FROM needs_resolve
 WHERE arb_type = 'cross'
 ORDER BY created_at DESC
@@ -68,7 +68,7 @@ func (q *Queries) GetRecentCrossArbs(ctx context.Context, limit int32) ([]NeedsR
 		if err := rows.Scan(
 			&i.ID,
 			&i.CorrelationID,
-			&i.Timestamp,
+			&i.ArbFoundAt,
 			&i.SimilarityHit,
 			&i.ArbType,
 			&i.CreatedAt,
@@ -84,7 +84,7 @@ func (q *Queries) GetRecentCrossArbs(ctx context.Context, limit int32) ([]NeedsR
 }
 
 const getRecentIntraArbs = `-- name: GetRecentIntraArbs :many
-SELECT id, correlation_id, timestamp, similarity_hit, arb_type, created_at
+SELECT id, correlation_id, arb_found_at, similarity_hit, arb_type, created_at
 FROM needs_resolve
 WHERE arb_type = 'intra'
 ORDER BY created_at DESC
@@ -103,7 +103,7 @@ func (q *Queries) GetRecentIntraArbs(ctx context.Context, limit int32) ([]NeedsR
 		if err := rows.Scan(
 			&i.ID,
 			&i.CorrelationID,
-			&i.Timestamp,
+			&i.ArbFoundAt,
 			&i.SimilarityHit,
 			&i.ArbType,
 			&i.CreatedAt,
@@ -121,7 +121,7 @@ func (q *Queries) GetRecentIntraArbs(ctx context.Context, limit int32) ([]NeedsR
 const insertNeedsResolve = `-- name: InsertNeedsResolve :exec
 INSERT INTO needs_resolve (
     correlation_id,
-    timestamp,
+    arb_found_at,
     similarity_hit,
     arb_type
 )
@@ -131,7 +131,7 @@ ON CONFLICT (correlation_id) DO NOTHING
 
 type InsertNeedsResolveParams struct {
 	CorrelationID string             `json:"correlation_id"`
-	Timestamp     pgtype.Timestamptz `json:"timestamp"`
+	ArbFoundAt    pgtype.Timestamptz `json:"arb_found_at"`
 	SimilarityHit []byte             `json:"similarity_hit"`
 	ArbType       string             `json:"arb_type"`
 }
@@ -139,7 +139,7 @@ type InsertNeedsResolveParams struct {
 func (q *Queries) InsertNeedsResolve(ctx context.Context, arg InsertNeedsResolveParams) error {
 	_, err := q.db.Exec(ctx, insertNeedsResolve,
 		arg.CorrelationID,
-		arg.Timestamp,
+		arg.ArbFoundAt,
 		arg.SimilarityHit,
 		arg.ArbType,
 	)

@@ -1,7 +1,10 @@
-use anyhow::{Ok, Result, ensure};
+use crate::constants;
+use anyhow::{Context, Ok, Result, ensure};
 use polymarket_hft::client::polymarket::gamma;
-use qdrant_client::qdrant;
+use qdrant_client::{Payload, qdrant};
+
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashMap;
 use std::fmt;
 use uuid::Uuid;
@@ -77,7 +80,7 @@ impl QdrantPointData {
 
     fn validate(payload: &protos::QdrantPayload) -> Result<()> {
         ensure!(
-            Uuid::parse_str(payload.uuid.as_str()).is_ok(),
+            Uuid::try_parse(&payload.uuid).is_ok(),
             "uuid string not valid uuid"
         );
         ensure!(
@@ -94,12 +97,13 @@ impl QdrantPointData {
             "platform cannot be empty"
         );
 
-        if payload.platform == "polymarket" {
+        if payload.platform == constants::PLATFORM_POLYMARKET {
             ensure!(
                 !payload.clob_token_ids.trim().is_empty(),
                 "clobTokenIds cannot be empty"
             );
         }
+
         ensure!(
             !payload.rules.trim().is_empty(),
             "description cannot be empty"
@@ -117,10 +121,42 @@ impl QdrantPointData {
     }
 }
 
+impl TryFrom<protos::QdrantPayload> for QdrantPointData {
+    type Error = anyhow::Error;
+
+    fn try_from(value: protos::QdrantPayload) -> std::result::Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<QdrantPointData> for qdrant::PointStruct {
+    type Error = anyhow::Error;
+
+    fn try_from(value: QdrantPointData) -> Result<Self, Self::Error> {
+        let payload = Payload::try_from(json!(value.get_payload()))
+            .context("payload conversion to qdrant PointStruct failed")?;
+
+        Ok(Self {
+            payload: payload.into(),
+            id: Some(qdrant::PointId::from(value.get_id())),
+            ..Default::default()
+        })
+    }
+}
+
+pub fn generate_point_id(platform: &str, market_id: &str) -> String {
+    let seed = format!("{}:{}", platform, market_id);
+    let uuid = Uuid::new_v5(&Uuid::NAMESPACE_OID, seed.as_bytes());
+    uuid.to_string()
+}
+
 impl From<gamma::Market> for protos::QdrantPayload {
     fn from(value: gamma::Market) -> Self {
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid: generate_point_id(
+                constants::PLATFORM_POLYMARKET,
+                value.condition_id.as_deref().unwrap_or_default(),
+            ),
             question: {
                 let q = value.question.unwrap_or_default();
                 if q.ends_with(|c| c == '?' || c == '.') {
@@ -137,6 +173,7 @@ impl From<gamma::Market> for protos::QdrantPayload {
             market_subcategory: String::new(),
             platform: "polymarket".to_string(),
             end_date: value.end_date_iso.or(value.end_date).unwrap_or_default(),
+            inserted_at: chrono::Utc::now().timestamp_millis(),
         }
     }
 }
@@ -144,7 +181,7 @@ impl From<gamma::Market> for protos::QdrantPayload {
 impl From<kalshi_rs::markets::models::Market> for protos::QdrantPayload {
     fn from(value: kalshi_rs::markets::models::Market) -> Self {
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid: generate_point_id(constants::PLATFORM_KALSHI, &value.ticker),
             question: {
                 let q = if value.subtitle.trim().is_empty() {
                     value.title.trim().to_string()
@@ -162,7 +199,7 @@ impl From<kalshi_rs::markets::models::Market> for protos::QdrantPayload {
                 let mut outcome = String::new();
                 outcome.push_str("[Yes(");
                 outcome.push_str(value.yes_sub_title.as_str().trim());
-                outcome.push_str(") : No(Not ");
+                outcome.push_str("), No(Not ");
                 outcome.push_str(value.no_sub_title.as_str().trim());
                 outcome.push_str(")]");
                 outcome
@@ -182,6 +219,7 @@ impl From<kalshi_rs::markets::models::Market> for protos::QdrantPayload {
             market_subcategory: String::new(),
             platform: "kalshi".to_string(),
             end_date: value.close_time,
+            inserted_at: chrono::Utc::now().timestamp_millis(),
         }
     }
 }
@@ -323,47 +361,59 @@ impl MarketTag {
     }
 }
 
+impl TryFrom<qdrant::ScoredPoint> for protos::Matches {
+    type Error = anyhow::Error;
+
+    fn try_from(value: qdrant::ScoredPoint) -> Result<Self, Self::Error> {
+        let payload = protos::QdrantPayload::try_from(value.payload)?;
+        Ok(protos::Matches {
+            scored: value.score,
+            r#match: Some(payload),
+        })
+    }
+}
+
 impl protos::SimilarityHit {
     pub fn try_from_results(
-        take: protos::QdrantPayload,
-        gives: Vec<qdrant::ScoredPoint>,
+        anchor: protos::QdrantPayload,
+        matches: Vec<qdrant::ScoredPoint>,
     ) -> Result<Self> {
-        let gives = gives
+        let matches = matches
             .into_iter()
-            .map(protos::Give::try_from) // Uses the single impl above!
-            .collect::<Result<Vec<protos::Give>, anyhow::Error>>()?;
+            .map(protos::Matches::try_from)
+            .collect::<Result<Vec<protos::Matches>, anyhow::Error>>()?;
 
         Ok(Self {
-            take: Some(take),
-            gives,
+            anchor: Some(anchor),
+            matches,
         })
     }
 }
 
 impl fmt::Display for protos::SimilarityHit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Some(take) = &self.take else {
+        let Some(anchor) = &self.anchor else {
             writeln!(f, "ANCHOR MARKET: <missing>")?;
             return fmt::Result::Ok(());
         };
 
         writeln!(f, "==============start================")?;
         writeln!(f, "ANCHOR MARKET")?;
-        writeln!(f, "Question : {}", take.question)?;
-        writeln!(f, "Outcomes : {}", take.outcome)?;
-        writeln!(f, "Platform : {}", take.platform)?;
-        writeln!(f, "Market category : {}", take.market_category)?;
-        writeln!(f, "Market subcategory : {}", take.market_subcategory)?;
-        writeln!(f, "Rules : {}", take.rules)?;
-        writeln!(f, "ticker : {}", take.market_id)?;
+        writeln!(f, "Question : {}", anchor.question)?;
+        writeln!(f, "Outcomes : {}", anchor.outcome)?;
+        writeln!(f, "Platform : {}", anchor.platform)?;
+        writeln!(f, "Market category : {}", anchor.market_category)?;
+        writeln!(f, "Market subcategory : {}", anchor.market_subcategory)?;
+        writeln!(f, "Rules : {}", anchor.rules)?;
+        writeln!(f, "ticker : {}", anchor.market_id)?;
 
         writeln!(f)?;
 
-        writeln!(f, "CANDIDATE MATCHES: {}", self.gives.len())?;
+        writeln!(f, "CANDIDATE MATCHES: {}", self.matches.len())?;
 
-        for (i, give) in self.gives.iter().enumerate() {
+        for (i, r#match) in self.matches.iter().enumerate() {
             writeln!(f, "\nMatch #{}", i + 1)?;
-            writeln!(f, "{give}")?;
+            writeln!(f, "{match}")?;
         }
         writeln!(f, "==============end================")?;
 
@@ -371,34 +421,22 @@ impl fmt::Display for protos::SimilarityHit {
     }
 }
 
-impl fmt::Display for protos::Give {
+impl fmt::Display for protos::Matches {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Some(payload) = &self.payload else {
+        let Some(r#match) = &self.r#match else {
             return fmt::Result::Ok(());
         };
 
         writeln!(f, "----------------------------------------")?;
-        writeln!(f, "Question : {}", payload.question)?;
-        writeln!(f, "Outcomes : {}", payload.outcome)?;
+        writeln!(f, "Question : {}", r#match.question)?;
+        writeln!(f, "Outcomes : {}", r#match.outcome)?;
         writeln!(f, "Similarity : {:.2}%", &self.scored * 100.0)?;
-        writeln!(f, "Platform : {}", payload.platform)?;
-        writeln!(f, "Market category : {}", payload.market_category)?;
-        writeln!(f, "Market subcategory : {}", payload.market_subcategory)?;
-        writeln!(f, "Rules : {}", payload.rules)?;
-        writeln!(f, "ticker : {}", payload.market_id)?;
+        writeln!(f, "Platform : {}", r#match.platform)?;
+        writeln!(f, "Market category : {}", r#match.market_category)?;
+        writeln!(f, "Market subcategory : {}", r#match.market_subcategory)?;
+        writeln!(f, "Rules : {}", r#match.rules)?;
+        writeln!(f, "ticker : {}", r#match.market_id)?;
 
         fmt::Result::Ok(())
-    }
-}
-
-impl TryFrom<qdrant::ScoredPoint> for protos::Give {
-    type Error = anyhow::Error;
-
-    fn try_from(value: qdrant::ScoredPoint) -> Result<Self, Self::Error> {
-        let payload = protos::QdrantPayload::try_from(value.payload)?;
-        Ok(protos::Give {
-            scored: value.score,
-            payload: Some(payload),
-        })
     }
 }

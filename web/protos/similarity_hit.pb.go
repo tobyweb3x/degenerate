@@ -33,6 +33,7 @@ type QdrantPayload struct {
 	MarketSubcategory string                 `protobuf:"bytes,8,opt,name=market_subcategory,json=marketSubcategory,proto3" json:"market_subcategory,omitempty"`
 	Platform          string                 `protobuf:"bytes,9,opt,name=platform,proto3" json:"platform,omitempty"`
 	EndDate           string                 `protobuf:"bytes,10,opt,name=end_date,json=endDate,proto3" json:"end_date,omitempty"`
+	InsertedAt        int64                  `protobuf:"varint,11,opt,name=inserted_at,json=insertedAt,proto3" json:"inserted_at,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -137,28 +138,35 @@ func (x *QdrantPayload) GetEndDate() string {
 	return ""
 }
 
-type Give struct {
+func (x *QdrantPayload) GetInsertedAt() int64 {
+	if x != nil {
+		return x.InsertedAt
+	}
+	return 0
+}
+
+type Matches struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Scored        float32                `protobuf:"fixed32,1,opt,name=scored,proto3" json:"scored,omitempty"`
-	Payload       *QdrantPayload         `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
+	Match         *QdrantPayload         `protobuf:"bytes,2,opt,name=match,proto3" json:"match,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Give) Reset() {
-	*x = Give{}
+func (x *Matches) Reset() {
+	*x = Matches{}
 	mi := &file_similarity_hit_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Give) String() string {
+func (x *Matches) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Give) ProtoMessage() {}
+func (*Matches) ProtoMessage() {}
 
-func (x *Give) ProtoReflect() protoreflect.Message {
+func (x *Matches) ProtoReflect() protoreflect.Message {
 	mi := &file_similarity_hit_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -170,29 +178,29 @@ func (x *Give) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Give.ProtoReflect.Descriptor instead.
-func (*Give) Descriptor() ([]byte, []int) {
+// Deprecated: Use Matches.ProtoReflect.Descriptor instead.
+func (*Matches) Descriptor() ([]byte, []int) {
 	return file_similarity_hit_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *Give) GetScored() float32 {
+func (x *Matches) GetScored() float32 {
 	if x != nil {
 		return x.Scored
 	}
 	return 0
 }
 
-func (x *Give) GetPayload() *QdrantPayload {
+func (x *Matches) GetMatch() *QdrantPayload {
 	if x != nil {
-		return x.Payload
+		return x.Match
 	}
 	return nil
 }
 
 type SimilarityHit struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Take          *QdrantPayload         `protobuf:"bytes,1,opt,name=take,proto3" json:"take,omitempty"`
-	Gives         []*Give                `protobuf:"bytes,2,rep,name=gives,proto3" json:"gives,omitempty"`
+	Anchor        *QdrantPayload         `protobuf:"bytes,1,opt,name=anchor,proto3" json:"anchor,omitempty"`
+	Matches       []*Matches             `protobuf:"bytes,2,rep,name=matches,proto3" json:"matches,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -227,16 +235,16 @@ func (*SimilarityHit) Descriptor() ([]byte, []int) {
 	return file_similarity_hit_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *SimilarityHit) GetTake() *QdrantPayload {
+func (x *SimilarityHit) GetAnchor() *QdrantPayload {
 	if x != nil {
-		return x.Take
+		return x.Anchor
 	}
 	return nil
 }
 
-func (x *SimilarityHit) GetGives() []*Give {
+func (x *SimilarityHit) GetMatches() []*Matches {
 	if x != nil {
-		return x.Gives
+		return x.Matches
 	}
 	return nil
 }
@@ -244,7 +252,7 @@ func (x *SimilarityHit) GetGives() []*Give {
 type Ebo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CorrelationId string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
-	Timestamp     int64                  `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	ArbFoundAt    int64                  `protobuf:"varint,2,opt,name=arb_found_at,json=arbFoundAt,proto3" json:"arb_found_at,omitempty"`
 	// Types that are valid to be assigned to Action:
 	//
 	//	*Ebo_CrossPlatformArb
@@ -291,9 +299,9 @@ func (x *Ebo) GetCorrelationId() string {
 	return ""
 }
 
-func (x *Ebo) GetTimestamp() int64 {
+func (x *Ebo) GetArbFoundAt() int64 {
 	if x != nil {
-		return x.Timestamp
+		return x.ArbFoundAt
 	}
 	return 0
 }
@@ -343,7 +351,7 @@ var File_similarity_hit_proto protoreflect.FileDescriptor
 
 const file_similarity_hit_proto_rawDesc = "" +
 	"\n" +
-	"\x14similarity_hit.proto\x12\rsimilarityhit\"\xc1\x02\n" +
+	"\x14similarity_hit.proto\x12\rsimilarityhit\"\xe2\x02\n" +
 	"\rQdrantPayload\x12\x12\n" +
 	"\x04uuid\x18\x01 \x01(\tR\x04uuid\x12\x1a\n" +
 	"\bquestion\x18\x02 \x01(\tR\bquestion\x12\x18\n" +
@@ -355,16 +363,19 @@ const file_similarity_hit_proto_rawDesc = "" +
 	"\x12market_subcategory\x18\b \x01(\tR\x11marketSubcategory\x12\x1a\n" +
 	"\bplatform\x18\t \x01(\tR\bplatform\x12\x19\n" +
 	"\bend_date\x18\n" +
-	" \x01(\tR\aendDate\"V\n" +
-	"\x04Give\x12\x16\n" +
-	"\x06scored\x18\x01 \x01(\x02R\x06scored\x126\n" +
-	"\apayload\x18\x02 \x01(\v2\x1c.similarityhit.QdrantPayloadR\apayload\"l\n" +
-	"\rSimilarityHit\x120\n" +
-	"\x04take\x18\x01 \x01(\v2\x1c.similarityhit.QdrantPayloadR\x04take\x12)\n" +
-	"\x05gives\x18\x02 \x03(\v2\x13.similarityhit.GiveR\x05gives\"\xf0\x01\n" +
+	" \x01(\tR\aendDate\x12\x1f\n" +
+	"\vinserted_at\x18\v \x01(\x03R\n" +
+	"insertedAt\"U\n" +
+	"\aMatches\x12\x16\n" +
+	"\x06scored\x18\x01 \x01(\x02R\x06scored\x122\n" +
+	"\x05match\x18\x02 \x01(\v2\x1c.similarityhit.QdrantPayloadR\x05match\"w\n" +
+	"\rSimilarityHit\x124\n" +
+	"\x06anchor\x18\x01 \x01(\v2\x1c.similarityhit.QdrantPayloadR\x06anchor\x120\n" +
+	"\amatches\x18\x02 \x03(\v2\x16.similarityhit.MatchesR\amatches\"\xf4\x01\n" +
 	"\x03Ebo\x12%\n" +
-	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x1c\n" +
-	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\x12L\n" +
+	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12 \n" +
+	"\farb_found_at\x18\x02 \x01(\x03R\n" +
+	"arbFoundAt\x12L\n" +
 	"\x12cross_platform_arb\x18\x03 \x01(\v2\x1c.similarityhit.SimilarityHitH\x00R\x10crossPlatformArb\x12L\n" +
 	"\x12intra_platform_arb\x18\x04 \x01(\v2\x1c.similarityhit.SimilarityHitH\x00R\x10intraPlatformArbB\b\n" +
 	"\x06action2=\n" +
@@ -386,14 +397,14 @@ func file_similarity_hit_proto_rawDescGZIP() []byte {
 var file_similarity_hit_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_similarity_hit_proto_goTypes = []any{
 	(*QdrantPayload)(nil), // 0: similarityhit.QdrantPayload
-	(*Give)(nil),          // 1: similarityhit.Give
+	(*Matches)(nil),       // 1: similarityhit.Matches
 	(*SimilarityHit)(nil), // 2: similarityhit.SimilarityHit
 	(*Ebo)(nil),           // 3: similarityhit.Ebo
 }
 var file_similarity_hit_proto_depIdxs = []int32{
-	0, // 0: similarityhit.Give.payload:type_name -> similarityhit.QdrantPayload
-	0, // 1: similarityhit.SimilarityHit.take:type_name -> similarityhit.QdrantPayload
-	1, // 2: similarityhit.SimilarityHit.gives:type_name -> similarityhit.Give
+	0, // 0: similarityhit.Matches.match:type_name -> similarityhit.QdrantPayload
+	0, // 1: similarityhit.SimilarityHit.anchor:type_name -> similarityhit.QdrantPayload
+	1, // 2: similarityhit.SimilarityHit.matches:type_name -> similarityhit.Matches
 	2, // 3: similarityhit.Ebo.cross_platform_arb:type_name -> similarityhit.SimilarityHit
 	2, // 4: similarityhit.Ebo.intra_platform_arb:type_name -> similarityhit.SimilarityHit
 	3, // 5: similarityhit.EsuOdara.Esu:input_type -> similarityhit.Ebo

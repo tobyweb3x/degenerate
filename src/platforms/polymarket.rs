@@ -1,3 +1,4 @@
+use super::utils;
 use crate::models::QdrantMarketConverter;
 use crate::vector_store;
 use crate::{
@@ -38,6 +39,8 @@ impl MyPolymarketClient {
         let duration = Duration::from_mins(5);
         let mut five_minute_ticker = tokio::time::interval(duration);
         let mut ws_is_alive = true;
+
+        five_minute_ticker.tick().await; // fires first tick
         loop {
             tokio::select! {
                 biased;
@@ -48,7 +51,7 @@ impl MyPolymarketClient {
                 }
 
                 _ = five_minute_ticker.tick() => {
-                    println!("five min triggers");
+                    println!("polymarket five min triggers");
                     let _ = self.backfill_polymarket_sport_history(duration, CancellationToken::new()).await
                     .inspect_err(|e| tracing::error!("backfill failed: {e:?}"));
                 }
@@ -82,20 +85,20 @@ impl MyPolymarketClient {
                     anyhow::bail!("tags are missing")
                 };
 
-                let market = Self::sort_polymarket_tags(tags)?;
+                let Some(market) = Self::sort_polymarket_tags(tags) else {
+                    return Ok(());
+                };
 
-                let payload = protos::QdrantPayload::from_market(
+                let qdrant_payload = protos::QdrantPayload::from_market(
                     value,
                     market.info().category,
                     market.info().subcategory,
                 );
 
-                let data = models::QdrantPointData::new(payload)?;
-
                 self.qdrant_client
                     .insert_and_search(
-                        data,
-                        constants::SIMILARITY_SCORE_THRESHOLD,
+                        qdrant_payload,
+                        vector_store::SIMILARITY_SCORE_THRESHOLD,
                         vector_store::VectorStore::create_cross_platform_filter(
                             Some(constants::PLATFORM_POLYMARKET.to_string()),
                             &market,
@@ -112,23 +115,26 @@ impl MyPolymarketClient {
         Ok(())
     }
 
-    fn sort_polymarket_tags(tags: &[gamma::Tag]) -> Result<models::MarketTag> {
+    fn sort_polymarket_tags(tags: &[gamma::Tag]) -> Option<models::MarketTag> {
         for tag in tags {
             match tag.id.as_str().trim() {
                 id if id == models::MarketTag::EPL.info().polymarket_identifier => {
-                    return Ok(models::MarketTag::EPL);
+                    return Some(models::MarketTag::EPL);
                 }
                 id if id == models::MarketTag::NBA.info().polymarket_identifier => {
-                    return Ok(models::MarketTag::NBA);
+                    return Some(models::MarketTag::NBA);
                 }
                 id if id == models::MarketTag::NFL.info().polymarket_identifier => {
-                    return Ok(models::MarketTag::NFL);
+                    return Some(models::MarketTag::NFL);
                 }
-                _ => {}
+                _ => {
+                    return None;
+                }
             }
         }
 
-        anyhow::bail!("no supported tag found(polymarket)")
+        // anyhow::bail!("no supported tag found(polymarket)")
+        None
     }
 
     async fn backfill_polymarket_sport_history(
@@ -213,15 +219,13 @@ impl MyPolymarketClient {
             }
         }
 
-        let payload = protos::QdrantPayload::from_markets(
+        let qdrant_payloads = protos::QdrantPayload::from_markets(
             container,
             market.info().category,
             market.info().subcategory,
         );
 
-        let data_list = models::QdrantPointData::new_many(payload)?;
-
-        let needed = data_list
+        let needed = qdrant_payloads
             .into_iter()
             .map(|point| {
                 let filter = vector_store::VectorStore::create_cross_platform_filter(
@@ -236,12 +240,38 @@ impl MyPolymarketClient {
     }
 
     pub async fn backfill_polymarket_history(&self, shutdown: CancellationToken) -> Result<()> {
-        let duration = Duration::from_hours(25 * 5);
+        let last_insert = self
+            .qdrant_client
+            .get_last_insert_time(constants::PLATFORM_POLYMARKET)
+            .await?;
+
+        let duration = match last_insert {
+            Some(date) => {
+                let diff = chrono::Utc::now() - date;
+
+                diff.to_std().unwrap_or(std::time::Duration::from_secs(0))
+                    + std::time::Duration::from_secs(3600)
+            }
+            None => {
+                tracing::info!(
+                    "no history found in Qdrant for polymarket, doing full initial backfill."
+                );
+                std::time::Duration::from_secs(25 * 3600 * 5)
+            }
+        };
+
+        tracing::info!(
+            "starting backfill for polymarket from {}",
+            utils::format_duration_ago(duration)
+        );
+
+        // sports
         self.backfill_polymarket_sport_history(duration, shutdown.clone())
             .await
-            .context("kalshi sport backfill failed")?;
+            .context("polymarket sport backfill failed")?;
 
         tracing::info!("polymarket sport backfill completed");
+
         // others in the future
         Ok(())
     }

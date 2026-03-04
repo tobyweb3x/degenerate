@@ -14,21 +14,22 @@ message QdrantPayload {
     string market_subcategory = 8;
     string platform = 9;
     string end_date = 10;
+    int64 inserted_at = 11; 
 }
 
-message Give {
+message Matches {
     float scored = 1;
-    QdrantPayload payload = 2;
+    QdrantPayload match = 2;
 }
 
 message SimilarityHit {
-    QdrantPayload take = 1;
-    repeated Give gives = 2;
+    QdrantPayload anchor = 1;
+    repeated Matches matches = 2;
 }
 
 message Ebo {
     string correlation_id = 1;
-    int64 timestamp = 2;
+    int64 arb_found_at = 2;
 
     oneof action {
         SimilarityHit cross_platform_arb = 3;

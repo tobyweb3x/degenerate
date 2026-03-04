@@ -1,7 +1,7 @@
 -- name: InsertNeedsResolve :exec
 INSERT INTO needs_resolve (
     correlation_id,
-    timestamp,
+    arb_found_at,
     similarity_hit,
     arb_type
 )
@@ -10,7 +10,7 @@ ON CONFLICT (correlation_id) DO NOTHING;
 
 -- name: BulkInsertNeedsResolve :copyfrom
 INSERT INTO needs_resolve (
-    correlation_id, timestamp, similarity_hit, arb_type
+    correlation_id, arb_found_at, similarity_hit, arb_type
 ) VALUES (
     $1, $2, $3, $4
 );

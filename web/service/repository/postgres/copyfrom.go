@@ -30,7 +30,7 @@ func (r *iteratorForBulkInsertNeedsResolve) Next() bool {
 func (r iteratorForBulkInsertNeedsResolve) Values() ([]interface{}, error) {
 	return []interface{}{
 		r.rows[0].CorrelationID,
-		r.rows[0].Timestamp,
+		r.rows[0].ArbFoundAt,
 		r.rows[0].SimilarityHit,
 		r.rows[0].ArbType,
 	}, nil
@@ -41,5 +41,5 @@ func (r iteratorForBulkInsertNeedsResolve) Err() error {
 }
 
 func (q *Queries) BulkInsertNeedsResolve(ctx context.Context, arg []BulkInsertNeedsResolveParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"needs_resolve"}, []string{"correlation_id", "timestamp", "similarity_hit", "arb_type"}, &iteratorForBulkInsertNeedsResolve{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"needs_resolve"}, []string{"correlation_id", "arb_found_at", "similarity_hit", "arb_type"}, &iteratorForBulkInsertNeedsResolve{rows: arg})
 }

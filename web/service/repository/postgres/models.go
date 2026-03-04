@@ -11,7 +11,7 @@ import (
 type NeedsResolve struct {
 	ID            int64              `json:"id"`
 	CorrelationID string             `json:"correlation_id"`
-	Timestamp     pgtype.Timestamptz `json:"timestamp"`
+	ArbFoundAt    pgtype.Timestamptz `json:"arb_found_at"`
 	SimilarityHit []byte             `json:"similarity_hit"`
 	ArbType       string             `json:"arb_type"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
