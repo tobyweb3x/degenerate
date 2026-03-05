@@ -108,7 +108,7 @@ async fn connect_and_run_session(
                         }
                     }
                     None => {
-                        eprintln!("bot_outbound_rx channel closed");
+                        tracing::info!("bot_outbound_rx channel closed");
                         return Ok(());
                     }
                 }

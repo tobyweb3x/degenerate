@@ -94,19 +94,19 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.Ebo) (*protos.Ebo, err
 	case *protos.Ebo_CrossPlatformArb:
 		hit := p.CrossPlatformArb
 
-		fmt.Printf("PROTO BEFORE JSON:\n%+v\n\n", hit)
-
 		byteData, err := protojson.Marshal(hit)
 		if err != nil {
 			return nil, err
 		}
 
-		var h protos.SimilarityHit
-		if err := protojson.Unmarshal(byteData, &h); err != nil {
-			fmt.Println("it errrored", err.Error())
-		}
+		// fmt.Printf("PROTO BEFORE JSON:\n%+v\n\n", hit)
 
-		fmt.Printf("PROTO AFTER JSON:\n\n%+v\n\n", hit)
+		// var h protos.SimilarityHit
+		// if err := protojson.Unmarshal(byteData, &h); err != nil {
+		// 	fmt.Println("it errrored", err.Error())
+		// }
+
+		// fmt.Printf("PROTO AFTER JSON:\n\n%+v\n\n", hit)
 
 		return nil, a.db.InsertNewNeedsResolveCrossArbs(
 			ctx,

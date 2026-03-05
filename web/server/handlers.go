@@ -34,6 +34,7 @@ func isHXRequest(r *http.Request) bool {
 
 func (a *App) dashboardPage(w http.ResponseWriter, r *http.Request) {
 
+	w.Header().Set("Content-Type", "text/html")
 	if err := frontend.DashboardPage().Render(context.TODO(), w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -55,6 +56,7 @@ func (a *App) needsResolvePage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isHXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
 		if err := frontend.NeedsResolvePartial(templModels).Render(context.Background(), w); err != nil {
 			a.serverError(w, err)
 			return
@@ -62,6 +64,7 @@ func (a *App) needsResolvePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "text/html")
 	if err := frontend.NeedsResolvePage(templModels).Render(context.TODO(), w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -105,6 +108,7 @@ func (a *App) resolvePage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isHXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
 		if err := frontend.ResolvePartial(templModel[0]).Render(context.TODO(), w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -112,6 +116,7 @@ func (a *App) resolvePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "text/html")
 	if err := frontend.ResolvePage(templModel[0]).Render(context.Background(), w); err != nil {
 		a.serverError(w, err)
 		return
@@ -204,6 +209,7 @@ func (a *App) deleteNeedsResolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "text/html")
 	if err := frontend.NeedsResolvePartial(templModels).Render(context.Background(), w); err != nil {
 		a.serverError(w, err)
 		return

@@ -53,7 +53,7 @@ impl MyPolymarketClient {
                 _ = five_minute_ticker.tick() => {
                     println!("polymarket five min triggers");
                     let _ = self.backfill_polymarket_sport_history(duration, CancellationToken::new()).await
-                    .inspect_err(|e| tracing::error!("backfill failed: {e:?}"));
+                    .inspect_err(|e| tracing::error!("error handling polymarket msg(backfill): {e:?}"));
                 }
 
                 result = self.clob_ws_client.next_message(), if ws_is_alive => {
@@ -64,7 +64,7 @@ impl MyPolymarketClient {
                   };
 
                     let _ = self.handle_polymarket_wss_message(msg).await
-                    .inspect_err(|e| tracing::error!("error from wss handler: {e:?}"));
+                    .inspect_err(|e| tracing::error!("error handling polymarket msg(wss): {e:?}"));
                 }
             }
         }
@@ -78,7 +78,7 @@ impl MyPolymarketClient {
             clob::ws::WsMessage::NewMarket(msg) => {
                 let value = self
                     .gamma_client
-                    .get_market_by_id(msg.id.as_str(), Some(true))
+                    .get_market_by_slug(msg.slug.as_str(), Some(true))
                     .await?;
 
                 let Some(ref tags) = value.tags else {
@@ -91,12 +91,12 @@ impl MyPolymarketClient {
 
                 let qdrant_payload = protos::QdrantPayload::from_market(
                     value,
-                    market.info().category,
-                    market.info().subcategory,
+                    market.info().market_category,
+                    market.info().market_subcategory,
                 );
 
                 self.qdrant_client
-                    .insert_and_search(
+                    .search_and_insert(
                         qdrant_payload,
                         vector_store::SIMILARITY_SCORE_THRESHOLD,
                         vector_store::VectorStore::create_cross_platform_filter(
@@ -133,7 +133,6 @@ impl MyPolymarketClient {
             }
         }
 
-        // anyhow::bail!("no supported tag found(polymarket)")
         None
     }
 
@@ -160,21 +159,32 @@ impl MyPolymarketClient {
             });
         }
 
+        let mut error_count = 0;
         while let Some(res) = join_set.join_next().await {
             match res {
                 std::result::Result::Ok(std::result::Result::Ok(())) => {}
                 std::result::Result::Ok(std::result::Result::Err(e)) => {
-                    let in_mins = duration / 60;
+                    let in_hrs = duration / (60 * 60);
                     tracing::error!(
-                        "polymarket sport backfill failed for duration({in_mins}) : {e:?}"
-                    )
+                        "polymarket sport backfill failed for duration({in_hrs}hrs) : {e:?}"
+                    );
+                    error_count += 1;
                 }
+
                 std::result::Result::Err(join_err) => {
-                    tracing::error!("polymarket sport backfill task panicked: {join_err:?}")
+                    tracing::error!("polymarket sport backfill task panicked: {join_err:?}");
+                    error_count += 1;
                 }
             }
         }
 
+        if error_count > 0 {
+            return Err(anyhow::anyhow!(
+                "polymarket sport backfill completed, but with errors. See logs.",
+            ));
+        }
+
+        tracing::info!("polymarket sport backfill completed successfully");
         Ok(())
     }
 
@@ -221,8 +231,8 @@ impl MyPolymarketClient {
 
         let qdrant_payloads = protos::QdrantPayload::from_markets(
             container,
-            market.info().category,
-            market.info().subcategory,
+            market.info().market_category,
+            market.info().market_subcategory,
         );
 
         let needed = qdrant_payloads
@@ -236,7 +246,9 @@ impl MyPolymarketClient {
             })
             .collect();
 
-        self.qdrant_client.insert_many_and_search(needed, 100).await
+        self.qdrant_client
+            .multiple_search_and_inserth(needed, 100)
+            .await
     }
 
     pub async fn backfill_polymarket_history(&self, shutdown: CancellationToken) -> Result<()> {
@@ -268,11 +280,10 @@ impl MyPolymarketClient {
         // sports
         self.backfill_polymarket_sport_history(duration, shutdown.clone())
             .await
-            .context("polymarket sport backfill failed")?;
-
-        tracing::info!("polymarket sport backfill completed");
+            .context("polymarket sport backfill errored")?;
 
         // others in the future
+        tracing::info!("polymarket backfill completed");
         Ok(())
     }
 }
@@ -291,8 +302,8 @@ fn write_new_wallet() -> Result<PrivateKeySigner> {
     let signer = PrivateKeySigner::random();
     let hex_encodeded_private_key = hex::encode(signer.to_bytes());
 
-    println!("New wallet created");
-    println!("Address: {}", signer.address());
+    tracing::info!("New wallet created");
+    tracing::info!("Address: {}", signer.address());
 
     fs::write(Path::new(PRIVATE_KEY_FILE), hex_encodeded_private_key)?;
     Ok(signer)

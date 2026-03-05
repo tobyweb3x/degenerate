@@ -2,6 +2,8 @@ package frontend
 
 import (
 	"fmt"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 	"strings"
 	"web/protos"
 )
@@ -15,7 +17,8 @@ templ NeedsResolvePartial(param []TemplateModel[protos.Ebo_CrossPlatformArb]) {
 		<div class="flex gap-3 py-4 justify-center items-center w-fit">
 			<p class="text-2xl font-archivoSemiBold text-left">Similarity Hits</p>
 			<p class="text-sm font-archivo rounded-full bg-[#FFFFFF4D] px-1.5 py-0.5 text-center w-fit h-fit">
-				{ len(param) }
+				{{ p := message.NewPrinter(language.English) }}
+				{ p.Sprintf("%d", len(param)) }
 			</p>
 		</div>
 		if len(param) > 0 {
@@ -140,8 +143,8 @@ templ ResolvePartial(param TemplateModel[protos.Ebo_CrossPlatformArb]) {
 										<p class="text-sm font-dmSans font-bold"><span class="font-archivo text-sm">Outcomes: </span> { v.Match.Outcome }</p>
 										<p><span class="font-archivo text-sm">Match: </span> { fmt.Sprintf("%.2f%%", v.Scored * 100) }</p>
 										<div class="flex gap-8 mt-2.5">
-											<p class="text-xs font-dmSans">EndDate: <span class="text-sm font-archivoSemiBold">{ param.Payload.CrossPlatformArb.Anchor.EndDate } </span></p>
-											<p class="text-xs font-archivo">platform: <span class="text-sm font-archivoSemiBold">{ strings.Title(param.Payload.CrossPlatformArb.Anchor.Platform ) }</span></p>
+											<p class="text-xs font-dmSans">EndDate: <span class="text-sm font-archivoSemiBold">{ v.Match.EndDate } </span></p>
+											<p class="text-xs font-archivo">platform: <span class="text-sm font-archivoSemiBold">{ strings.Title(v.Match.Platform ) }</span></p>
 										</div>
 									</div>
 									<section class="pr-2 flex flex-col items-end gap-2">
@@ -219,7 +222,7 @@ templ ResolvePartial(param TemplateModel[protos.Ebo_CrossPlatformArb]) {
 									</section>
 								</div>
 								<p class="font-extrabold font-archivoSemiBold text-sm mt-3">Rules:</p>
-								<p class="font-dmSans text-sm">{ param.Payload.CrossPlatformArb.Anchor.Rules }</p>
+								<p class="font-dmSans text-sm">{ v.Match.Rules }</p>
 							</li>
 						}
 					</ul>
@@ -249,7 +252,7 @@ templ ResolvePartial(param TemplateModel[protos.Ebo_CrossPlatformArb]) {
 				<input type="hidden" name="selections[]" class="pick-input"/>
 				<div class="flex justify-between items-center mb-2 pb-2 border-b border-[#FFFFFF10]">
 					<span class="text-sm font-bold text-white pick-title">Match #?</span>
-					<button type="button" class="text-gray-400 hover:text-red-400 pick-remove-btn transition-colors">✕</button>
+					<button type="button" class="text-gray-400 hover:text-red-400 pick-remove-btn transition-colors cursor-pointer">✕</button>
 				</div>
 				<div class="bg-black/30 rounded p-2.5 flex flex-col gap-3">
 					<div>

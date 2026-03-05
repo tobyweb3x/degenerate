@@ -28,7 +28,7 @@ impl Picker {
 
                 msg = self.rx.recv() => {
                     let Some(ebo) = msg else {
-                        println!("got a None instead of todo, picker closed");
+                        tracing::info!("got a None instead of todo, picker closed");
                         break;
                     };
 

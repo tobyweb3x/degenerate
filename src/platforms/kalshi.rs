@@ -3,41 +3,34 @@ use crate::constants;
 use crate::models::{self, QdrantMarketConverter, protos};
 use crate::vector_store;
 use anyhow::{Context, Ok, Result};
-use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use kalshi_rs::{
     KalshiClient, KalshiWebsocketClient,
     markets::models::MarketsQuery,
     series::models::{Series, SeriesQuery},
     websocket::models::KalshiSocketMessage,
 };
-use std::num::NonZeroU32;
 use std::{sync::Arc, time::Duration};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub struct MyKalshiClient {
-    http_client: Arc<KalshiClient>,
+    http_client: KalshiClient,
     ws_client: Arc<KalshiWebsocketClient>,
     qdrant_client: vector_store::VectorStore,
     account: kalshi_rs::Account,
-    read_rate_limiter: Arc<DefaultDirectRateLimiter>,
 }
 
 impl MyKalshiClient {
     pub fn new(account: kalshi_rs::Account, qdrant_client: vector_store::VectorStore) -> Self {
-        let quota = Quota::per_second(NonZeroU32::new(15).unwrap());
-        let read_rate_limiter = RateLimiter::direct(quota);
-
         let kalshi_http = KalshiClient::new(account.clone());
         let kalshi_ws = KalshiWebsocketClient::new(account.clone());
 
         Self {
             account,
-            http_client: Arc::new(kalshi_http),
+            http_client: kalshi_http,
             ws_client: Arc::new(kalshi_ws),
             qdrant_client,
-            read_rate_limiter: Arc::new(read_rate_limiter),
         }
     }
 
@@ -58,7 +51,7 @@ impl MyKalshiClient {
         let duration = Duration::from_mins(6);
         let mut six_minute_ticker = tokio::time::interval(duration);
         let mut ws_is_alive = true;
-        
+
         six_minute_ticker.tick().await; // fires first tick
         loop {
             tokio::select! {
@@ -71,7 +64,7 @@ impl MyKalshiClient {
                 _ = six_minute_ticker.tick() => {
                     println!("kalshi six min triggers");
                         let _ = self.backfill_kalshi_sport_history(duration, CancellationToken::new()).await
-                        .inspect_err(|e|  tracing::error!("error handling kalshi msg: {e:?}"));
+                        .inspect_err(|e|  tracing::error!("error handling kalshi msg(backfill): {e:?}"));
                      }
 
 
@@ -85,7 +78,7 @@ impl MyKalshiClient {
                   match result {
                       std::result::Result::Ok(msg) => {
                         let _ = self.handle_kalshi_wss_message(msg).await
-                        .inspect_err(|e|  tracing::error!("error handling kalshi msg: {e:?}"));
+                        .inspect_err(|e|  tracing::error!("error handling kalshi msg(wss): {e:?}"));
 
                       }
 
@@ -104,11 +97,11 @@ impl MyKalshiClient {
     async fn handle_kalshi_wss_message(&self, msg: KalshiSocketMessage) -> Result<()> {
         match msg {
             KalshiSocketMessage::SubscribedResponse(res) => {
-                println!("Subscribed: {:#?}", res);
+                tracing::info!("Subscribed: {:#?}", res);
             }
 
             KalshiSocketMessage::OkResponse(res) => {
-                println!("OK response: {:#?}", res);
+                tracing::info!("OK response: {:#?}", res);
             }
 
             KalshiSocketMessage::Ping(payload) => {
@@ -127,7 +120,7 @@ impl MyKalshiClient {
 
                 let value = self
                     .http_client
-                    .get_market(&event.msg.market_ticker)
+                    .get_market(event.msg.market_ticker.as_str())
                     .await?;
 
                 let event = self
@@ -146,12 +139,12 @@ impl MyKalshiClient {
 
                 let qdrant_payload = protos::QdrantPayload::from_market(
                     value.market,
-                    market.info().category,
-                    market.info().subcategory,
+                    market.info().market_category,
+                    market.info().market_subcategory,
                 );
 
                 self.qdrant_client
-                    .insert_and_search(
+                    .search_and_insert(
                         qdrant_payload,
                         vector_store::SIMILARITY_SCORE_THRESHOLD,
                         vector_store::VectorStore::create_cross_platform_filter(
@@ -204,7 +197,6 @@ impl MyKalshiClient {
             }
         }
 
-        // anyhow::bail!("no supported tag found(kalshi")
         None
     }
 
@@ -253,59 +245,53 @@ impl MyKalshiClient {
             }
         }
 
+        println!(
+            "len of sports tags: soccer {}, football {}, basketball {}",
+            soccer.len(),
+            football.len(),
+            basketball.len()
+        );
+
         let mut join_set = JoinSet::new();
-        let cloned_shutdown = shutdown.clone();
-        let this = self.clone();
-        join_set.spawn(async move {
-            this.read_rate_limiter.until_ready().await;
-            this.backfill_kalshi_sport_for_market_tag(
-                duration,
-                models::MarketTag::EPL,
-                soccer,
-                cloned_shutdown,
-            )
-            .await
-        });
 
-        let this = self.clone();
-        let cloned_shutdown = shutdown.clone();
-        join_set.spawn(async move {
-            this.read_rate_limiter.until_ready().await;
-            this.backfill_kalshi_sport_for_market_tag(
-                duration,
-                models::MarketTag::NFL,
-                football,
-                cloned_shutdown,
-            )
-            .await
-        });
+        for (tag, markets) in [
+            (models::MarketTag::EPL, soccer),
+            (models::MarketTag::NFL, football),
+            (models::MarketTag::NBA, basketball),
+        ] {
+            let this = self.clone();
+            let shutdown = shutdown.clone();
+            join_set.spawn(async move {
+                this.backfill_kalshi_sport_for_market_tag(duration, tag, markets, shutdown)
+                    .await
+            });
+        }
 
-        let this = self.clone();
-        let cloned_shutdown = shutdown.clone();
-        join_set.spawn(async move {
-            this.read_rate_limiter.until_ready().await;
-            this.backfill_kalshi_sport_for_market_tag(
-                duration,
-                models::MarketTag::NBA,
-                basketball,
-                cloned_shutdown,
-            )
-            .await
-        });
-
+        let mut error_count = 0;
         while let Some(res) = join_set.join_next().await {
             match res {
                 std::result::Result::Ok(std::result::Result::Ok(())) => {}
                 std::result::Result::Ok(std::result::Result::Err(e)) => {
-                    tracing::error!("kalshi sport backfill failed: {e:?}")
+                    let in_hrs = duration.as_secs() / (60 * 60);
+                    tracing::error!(
+                        "kalshi sport backfill failed for duration({in_hrs}hrs) : {e:?}"
+                    );
+                    error_count += 1;
                 }
                 std::result::Result::Err(join_err) => {
-                    tracing::error!("kalshi sport backfill task panicked: {join_err:?}")
+                    tracing::error!("kalshi sport backfill task panicked: {join_err:?}");
+                    error_count += 1;
                 }
             }
         }
 
-        tracing::info!("kalshi sport backfill completed");
+        if error_count > 0 {
+            return Err(anyhow::anyhow!(
+                "Kalshi sport backfill completed, but with errors. See logs.",
+            ));
+        }
+
+        tracing::info!("kalshi sport backfill completed successfully");
         Ok(())
     }
 
@@ -341,7 +327,8 @@ impl MyKalshiClient {
                         min_created_ts: Some(min_created_timestamp as i64),
                         ..Default::default()
                     })
-                    .await?;
+                    .await
+                    .context("from get_all_markets:backfill_kalshi_sport_for_market_tag")?;
 
                 container.extend(result.markets);
 
@@ -354,8 +341,8 @@ impl MyKalshiClient {
 
         let qdrant_payloads = protos::QdrantPayload::from_markets(
             container,
-            market.info().category,
-            market.info().subcategory,
+            market.info().market_category,
+            market.info().market_subcategory,
         );
 
         let needed = qdrant_payloads
@@ -369,7 +356,9 @@ impl MyKalshiClient {
             })
             .collect();
 
-        self.qdrant_client.insert_many_and_search(needed, 100).await
+        self.qdrant_client
+            .multiple_search_and_inserth(needed, 100)
+            .await
     }
 
     pub async fn backfill_kalshi_history(&self, shutdown: CancellationToken) -> Result<()> {
@@ -400,9 +389,11 @@ impl MyKalshiClient {
 
         self.backfill_kalshi_sport_history(duration, shutdown)
             .await
-            .context("kalshi sport backfill failed")?;
+            .context("kalshi sport backfill errored")?;
 
         // others in the future
+        tracing::info!("kalshi backfill completed");
+
         Ok(())
     }
 }

@@ -43,7 +43,7 @@ impl QdrantPointData {
         }
         question_vector.push(')');
 
-        // println!("question vector --> {question_vector}:{}", payload.platform);
+        // tracing::info!("question vector --> {question_vector}:{}", payload.platform);
         Ok(Self {
             id: payload.uuid.clone(),
             question_vector,
@@ -171,7 +171,7 @@ impl From<gamma::Market> for protos::QdrantPayload {
             market_id: value.condition_id.unwrap_or_default(),
             market_category: String::new(),
             market_subcategory: String::new(),
-            platform: "polymarket".to_string(),
+            platform: constants::PLATFORM_POLYMARKET.to_string(),
             end_date: value.end_date_iso.or(value.end_date).unwrap_or_default(),
             inserted_at: chrono::Utc::now().timestamp_millis(),
         }
@@ -217,7 +217,7 @@ impl From<kalshi_rs::markets::models::Market> for protos::QdrantPayload {
             clob_token_ids: String::new(),
             market_category: String::new(),
             market_subcategory: String::new(),
-            platform: "kalshi".to_string(),
+            platform: constants::PLATFORM_KALSHI.to_string(),
             end_date: value.close_time,
             inserted_at: chrono::Utc::now().timestamp_millis(),
         }
@@ -322,17 +322,13 @@ pub enum MarketTag {
 pub struct MarketTagInfo {
     pub polymarket_identifier: &'static str,
     pub kalshi_identifier: &'static str,
-    pub category: &'static str,
-    pub subcategory: &'static str,
+    pub market_category: &'static str,
+    pub market_subcategory: &'static str,
 }
 
 impl std::fmt::Display for MarketTagInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}_{}_{}",
-            self.category, self.subcategory, self.polymarket_identifier
-        )
+        write!(f, "{}_{}", self.market_category, self.market_subcategory,)
     }
 }
 
@@ -342,20 +338,20 @@ impl MarketTag {
             Self::EPL => MarketTagInfo {
                 polymarket_identifier: "306",
                 kalshi_identifier: "Soccer",
-                category: "sport",
-                subcategory: "EPL",
+                market_category: "sport",
+                market_subcategory: "EPL",
             },
             Self::NBA => MarketTagInfo {
                 polymarket_identifier: "745",
                 kalshi_identifier: "Basketball",
-                category: "sport",
-                subcategory: "NBA",
+                market_category: "sport",
+                market_subcategory: "NBA",
             },
             Self::NFL => MarketTagInfo {
                 polymarket_identifier: "450",
                 kalshi_identifier: "Football",
-                category: "sport",
-                subcategory: "NFL",
+                market_category: "sport",
+                market_subcategory: "NFL",
             },
         }
     }

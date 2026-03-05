@@ -56,8 +56,8 @@ async fn main() -> Result<()> {
                 std::result::Result::Ok(_) => tracing::info!("all tasks finished successfully"),
                 Err(e) => {
                     tracing::error!("application crashed, a task failed: {:?}", e);
-                    tracing::info!("went with proper cleanup");
-                    // shutdown.cancel();
+                    shutdown.cancel();
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await; // just wait for cleanup (if ever)
                 }
             }
         }
@@ -70,7 +70,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    println!("i hope arb was 👍🏿 and 💋");
+    tracing::info!("i hope arb was 👍🏿 and 💋");
     Ok(())
 }
 

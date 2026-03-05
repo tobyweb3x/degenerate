@@ -144,18 +144,23 @@ impl VectorStore {
         self.index_payload(FIELD_UUID, FieldType::Uuid)
             .await
             .context(format!("qdrant index error on {}", FIELD_UUID))?;
-        self.index_payload(FIELD_MARKET_CATEGORY, FieldType::Keyword)
-            .await
-            .context(format!("qdrant index error on {}", FIELD_MARKET_CATEGORY))?;
+
         self.index_payload(FIELD_PLATFORM, FieldType::Keyword)
             .await
             .context(format!("qdrant index error on {}", FIELD_PLATFORM))?;
+
+        self.index_payload(FIELD_MARKET_CATEGORY, FieldType::Keyword)
+            .await
+            .context(format!("qdrant index error on {}", FIELD_MARKET_CATEGORY))?;
+
         self.index_payload(FIELD_MARKET_SUBCATEGORY, FieldType::Keyword)
             .await
             .context(format!("qdrant index error on {}", FIELD_MARKET_CATEGORY))?;
+
         self.index_payload(FIELD_END_DATE, FieldType::Datetime)
             .await
             .context(format!("qdrant index error on {}", FIELD_END_DATE))?;
+
         self.index_payload(FIELD_INSERTED_AT, FieldType::Integer) // Changed
             .await
             .context(format!("qdrant index error on {}", FIELD_INSERTED_AT))?;
@@ -239,7 +244,7 @@ impl VectorStore {
         Ok(())
     }
 
-    pub async fn insert_and_search<T>(
+    pub async fn search_and_insert<T>(
         &self,
         point_data: T,
         score_threshold: f32,
@@ -253,8 +258,7 @@ impl VectorStore {
         let anchor = point_data.get_payload();
         let (point, vec_data) = self.create_point(point_data).await?;
 
-        self.insert(point).await?;
-
+        // search
         let response = self
             .semantic_similarity_search(vec_data, score_threshold, 10, filter, true)
             .await?;
@@ -265,6 +269,9 @@ impl VectorStore {
 
         let clone_anchor = anchor.clone();
         let hit = protos::SimilarityHit::try_from_results(anchor, response.result)?;
+
+        // insert
+        self.insert(point).await?;
 
         self.tx
             .send(protos::Ebo {
@@ -280,7 +287,7 @@ impl VectorStore {
         Ok(())
     }
 
-    pub async fn insert_many_and_search<T>(
+    pub async fn multiple_search_and_inserth<T>(
         &self,
         values: Vec<(T, Option<Filter>)>,
         chunk_size: usize,
@@ -309,8 +316,7 @@ impl VectorStore {
         let (point_structs, vectors): (Vec<PointStruct>, Vec<Vec<f32>>) =
             points_and_vectors.into_iter().unzip();
 
-        self.insert_many(point_structs, chunk_size).await?;
-
+        // search
         let mut query_points = Vec::with_capacity(vectors.len());
         for (vec_data, filter) in vectors.into_iter().zip(filters) {
             let mut request = QueryPointsBuilder::new(self.collection_name)
@@ -325,7 +331,6 @@ impl VectorStore {
 
             query_points.push(request.build());
         }
-
         let responses = self.semantic_similarity_search_batch(query_points).await?;
 
         if responses.result.len() == 0 {
@@ -339,6 +344,9 @@ impl VectorStore {
                 responses.result.len()
             );
         }
+
+        // insert
+        self.insert_many(point_structs, chunk_size).await?;
 
         for (take, response) in takes.into_iter().zip(responses.result) {
             if response.result.is_empty() {
@@ -441,14 +449,24 @@ impl VectorStore {
     ) -> Option<Filter> {
         let platform = platform?;
 
-        Some(Filter::must([
-            Condition::matches(FIELD_PLATFORM, !MatchValue::Keyword(platform)),
-            Condition::matches(FIELD_MARKET_CATEGORY, market.info().category.to_string()),
-            Condition::matches(
-                FIELD_MARKET_SUBCATEGORY,
-                market.info().subcategory.to_string(),
-            ),
-        ]))
+        Some(Filter {
+            must: vec![
+                Condition::matches(
+                    FIELD_MARKET_CATEGORY,
+                    MatchValue::Keyword(market.info().market_category.to_string()),
+                ),
+                Condition::matches(
+                    FIELD_MARKET_SUBCATEGORY,
+                    MatchValue::Keyword(market.info().market_subcategory.to_string()),
+                ),
+            ],
+            must_not: vec![Condition::matches(
+                FIELD_PLATFORM,
+                MatchValue::Keyword(platform),
+            )],
+            should: vec![],
+            min_should: None,
+        })
     }
 
     pub fn create_intra_platform_filter(
@@ -459,10 +477,13 @@ impl VectorStore {
 
         Some(Filter::must([
             Condition::matches(FIELD_PLATFORM, platform),
-            Condition::matches(FIELD_MARKET_CATEGORY, market.info().category.to_string()),
+            Condition::matches(
+                FIELD_MARKET_CATEGORY,
+                market.info().market_category.to_string(),
+            ),
             Condition::matches(
                 FIELD_MARKET_SUBCATEGORY,
-                market.info().subcategory.to_string(),
+                market.info().market_subcategory.to_string(),
             ),
         ]))
     }
