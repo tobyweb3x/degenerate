@@ -1,1 +1,2 @@
-DROP TABLE IF IT EXISTS needs_resolve
+DROP TABLE IF IT EXISTS similarity_hits
+DROP TABLE IF IT EXISTS arbs

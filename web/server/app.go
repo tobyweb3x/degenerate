@@ -5,7 +5,6 @@ import (
 	"web/service/repository"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type App struct {
@@ -15,16 +14,11 @@ type App struct {
 
 func NewApp(conn *pgxpool.Pool) *App {
 	return &App{
-		GrpcComms: make(chan *protos.Ebo, 100),
+		GrpcComms: make(chan *protos.Ebo, 512),
 		db:        repository.NewService(conn),
 	}
 }
 
 func (a *App) closeGrpcComms() {
 	close(a.GrpcComms)
-}
-
-var protoMarshaler = protojson.MarshalOptions{
-	UseProtoNames:   true, // Keep snake_case keys (optional)
-	EmitUnpopulated: true, // Save default values (optional)
 }

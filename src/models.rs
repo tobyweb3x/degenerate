@@ -1,16 +1,32 @@
-use crate::constants;
-use anyhow::{Context, Ok, Result, ensure};
+use anyhow::{Context, Result, ensure};
 use polymarket_hft::client::polymarket::gamma;
 use qdrant_client::{Payload, qdrant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use std::fmt;
+use std::fmt::{self, format};
 use uuid::Uuid;
 
 pub mod protos {
     tonic::include_proto!("similarityhit");
+}
+
+pub mod constants {
+    pub const PLATFORM_POLYMARKET: &str = "POLYMARKET";
+    pub const PLATFORM_KALSHI: &str = "KALSHI";
+}
+
+impl fmt::Display for protos::Platform {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str_name())
+    }
+}
+
+impl From<protos::Platform> for i64 {
+    fn from(p: protos::Platform) -> Self {
+        p as i32 as i64
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -22,30 +38,38 @@ pub struct QdrantPointData {
 
 impl QdrantPointData {
     pub fn new(payload: protos::QdrantPayload) -> Result<Self> {
-        Self::validate(&payload)?;
+        let market_info = payload
+            .market_info
+            .as_ref()
+            .context("market_info cannot be None")?;
+
+        Self::validate(&market_info).context("QdrantPointData validation constraint failed")?;
 
         let mut question_vector = String::with_capacity(
-            payload.question.len() + payload.outcome.len() + payload.market_category.len() + 32,
+            market_info.question.len()
+                + market_info.outcome.len()
+                + market_info.market_category.len()
+                + 32,
         );
 
         question_vector.push_str("Question: ");
-        question_vector.push_str(&payload.question);
+        question_vector.push_str(&market_info.question);
 
         question_vector.push(' ');
         question_vector.push_str("Outcomes: ");
-        question_vector.push_str(&payload.outcome);
+        question_vector.push_str(&market_info.outcome);
         question_vector.push_str(" Category: (");
-        question_vector.push_str(&payload.market_category);
+        question_vector.push_str(&market_info.market_category);
 
-        if !payload.market_subcategory.is_empty() {
+        if !market_info.market_subcategory.is_empty() {
             question_vector.push(':');
-            question_vector.push_str(&payload.market_subcategory);
+            question_vector.push_str(&market_info.market_subcategory);
         }
         question_vector.push(')');
 
-        // tracing::info!("question vector --> {question_vector}:{}", payload.platform);
+        // tracing::info!("question vector --> {question_vector}:{}", market_info.platform);
         Ok(Self {
-            id: payload.uuid.clone(),
+            id: market_info.uuid.clone(),
             question_vector,
             payload,
         })
@@ -57,7 +81,7 @@ impl QdrantPointData {
         Ok(payloads
             .into_iter()
             .filter_map(|payload| match Self::new(payload) {
-                std::result::Result::Ok(point) => Some(point),
+                Ok(point) => Some(point),
                 Err(e) => {
                     tracing::error!("{e}");
                     None
@@ -78,45 +102,43 @@ impl QdrantPointData {
         self.payload.clone()
     }
 
-    fn validate(payload: &protos::QdrantPayload) -> Result<()> {
+    fn validate(market_info: &protos::MarketInfo) -> Result<()> {
         ensure!(
-            Uuid::try_parse(&payload.uuid).is_ok(),
+            Uuid::try_parse(&market_info.uuid).is_ok(),
             "uuid string not valid uuid"
         );
         ensure!(
-            !payload.question.trim().is_empty(),
+            !market_info.market_id.trim().is_empty(),
+            "market_id cannot be empty"
+        );
+        ensure!(
+            !market_info.question.trim().is_empty(),
             "question cannot be empty"
         );
         ensure!(
-            !payload.outcome.trim().is_empty(),
+            !market_info.outcome.trim().is_empty(),
             "outcome cannot be empty"
         );
-
         ensure!(
-            !payload.platform.trim().is_empty(),
-            "platform cannot be empty"
-        );
-
-        if payload.platform == constants::PLATFORM_POLYMARKET {
-            ensure!(
-                !payload.clob_token_ids.trim().is_empty(),
-                "clobTokenIds cannot be empty"
-            );
-        }
-
-        ensure!(
-            !payload.rules.trim().is_empty(),
-            "description cannot be empty"
+            !market_info.rules.trim().is_empty(),
+            "rules cannot be empty"
         );
         ensure!(
-            !payload.market_id.trim().is_empty(),
-            "condition_id cannot be empty"
-        );
-        ensure!(
-            !payload.market_category.trim().is_empty(),
+            !market_info.market_category.trim().is_empty(),
             "market_category cannot be empty"
         );
-
+        ensure!(
+            !market_info.market_subcategory.trim().is_empty(),
+            "market_subcategory cannot be empty"
+        );
+        ensure!(
+            protos::Platform::try_from(market_info.platform).is_ok(),
+            "invalid platform"
+        );
+        ensure!(
+            !market_info.end_date.trim().is_empty(),
+            "end_date cannot be empty"
+        );
         Ok(())
     }
 }
@@ -144,19 +166,19 @@ impl TryFrom<QdrantPointData> for qdrant::PointStruct {
     }
 }
 
-pub fn generate_point_id(platform: &str, market_id: &str) -> String {
-    let seed = format!("{}:{}", platform, market_id);
+pub fn generate_uuid_v5(seed: String) -> String {
     let uuid = Uuid::new_v5(&Uuid::NAMESPACE_OID, seed.as_bytes());
     uuid.to_string()
 }
 
-impl From<gamma::Market> for protos::QdrantPayload {
+impl From<gamma::Market> for protos::MarketInfo {
     fn from(value: gamma::Market) -> Self {
         Self {
-            uuid: generate_point_id(
-                constants::PLATFORM_POLYMARKET,
-                value.condition_id.as_deref().unwrap_or_default(),
-            ),
+            uuid: generate_uuid_v5(format!(
+                "{}:{}",
+                protos::Platform::Polymarket.as_str_name(),
+                value.slug.as_deref().unwrap_or_default()
+            )),
             question: {
                 let q = value.question.unwrap_or_default();
                 if q.ends_with(|c| c == '?' || c == '.') {
@@ -166,22 +188,24 @@ impl From<gamma::Market> for protos::QdrantPayload {
                 }
             },
             outcome: value.outcomes.unwrap_or_default().replace('\\', ""),
-            clob_token_ids: value.clob_token_ids.unwrap_or_default(),
             rules: value.description.unwrap_or_default(),
-            market_id: value.condition_id.unwrap_or_default(),
+            market_id: value.slug.unwrap_or_default(),
             market_category: String::new(),
             market_subcategory: String::new(),
-            platform: constants::PLATFORM_POLYMARKET.to_string(),
+            platform: protos::Platform::Polymarket.into(),
             end_date: value.end_date_iso.or(value.end_date).unwrap_or_default(),
-            inserted_at: chrono::Utc::now().timestamp_millis(),
         }
     }
 }
 
-impl From<kalshi_rs::markets::models::Market> for protos::QdrantPayload {
+impl From<kalshi_rs::markets::models::Market> for protos::MarketInfo {
     fn from(value: kalshi_rs::markets::models::Market) -> Self {
         Self {
-            uuid: generate_point_id(constants::PLATFORM_KALSHI, &value.ticker),
+            uuid: generate_uuid_v5(format!(
+                "{}:{}",
+                protos::Platform::Kalshi.as_str_name(),
+                value.ticker.as_str(),
+            )),
             question: {
                 let q = if value.subtitle.trim().is_empty() {
                     value.title.trim().to_string()
@@ -214,12 +238,28 @@ impl From<kalshi_rs::markets::models::Market> for protos::QdrantPayload {
                     format!("{}. {}", value.rules_primary, value.rules_secondary)
                 }
             },
-            clob_token_ids: String::new(),
             market_category: String::new(),
             market_subcategory: String::new(),
-            platform: constants::PLATFORM_KALSHI.to_string(),
+            platform: protos::Platform::Kalshi.into(),
             end_date: value.close_time,
-            inserted_at: chrono::Utc::now().timestamp_millis(),
+        }
+    }
+}
+
+impl From<gamma::Market> for protos::QdrantPayload {
+    fn from(value: gamma::Market) -> Self {
+        Self {
+            market_info: Some(value.into()),
+            qdrant_inserted_at: chrono::Utc::now().timestamp_millis(),
+        }
+    }
+}
+
+impl From<kalshi_rs::markets::models::Market> for protos::QdrantPayload {
+    fn from(value: kalshi_rs::markets::models::Market) -> Self {
+        Self {
+            market_info: Some(value.into()),
+            qdrant_inserted_at: chrono::Utc::now().timestamp_millis(),
         }
     }
 }
@@ -255,8 +295,10 @@ impl QdrantMarketConverter<gamma::Market> for protos::QdrantPayload {
         market_subcategory: impl Into<String>,
     ) -> Self {
         let mut v: Self = value.into();
-        v.market_category = market_category.into();
-        v.market_subcategory = market_subcategory.into();
+        let info = v.market_info.get_or_insert_with(Default::default);
+        info.market_category = market_category.into();
+        info.market_subcategory = market_subcategory.into();
+
         v
     }
 
@@ -265,16 +307,18 @@ impl QdrantMarketConverter<gamma::Market> for protos::QdrantPayload {
         market_category: impl Into<String>,
         market_subcategory: impl Into<String>,
     ) -> Vec<Self> {
-        let category = market_category.into();
-        let subcategory = market_subcategory.into();
+        let market_category = market_category.into();
+        let market_subcategory = market_subcategory.into();
 
         values
             .into_iter()
             .map(|value| {
-                let mut data: Self = value.into();
-                data.market_category = category.clone();
-                data.market_subcategory = subcategory.clone();
-                data
+                let mut v: Self = value.into();
+                let info = v.market_info.get_or_insert_with(Default::default);
+                info.market_category = market_category.clone();
+                info.market_subcategory = market_subcategory.clone();
+
+                v
             })
             .collect()
     }
@@ -287,8 +331,10 @@ impl QdrantMarketConverter<kalshi_rs::markets::models::Market> for protos::Qdran
         market_subcategory: impl Into<String>,
     ) -> Self {
         let mut v: Self = value.into();
-        v.market_category = market_category.into();
-        v.market_subcategory = market_subcategory.into();
+        let info = v.market_info.get_or_insert_with(Default::default);
+        info.market_category = market_category.into();
+        info.market_subcategory = market_subcategory.into();
+
         v
     }
 
@@ -297,16 +343,18 @@ impl QdrantMarketConverter<kalshi_rs::markets::models::Market> for protos::Qdran
         market_category: impl Into<String>,
         market_subcategory: impl Into<String>,
     ) -> Vec<Self> {
-        let category = market_category.into();
-        let subcategory = market_subcategory.into();
+        let market_category = market_category.into();
+        let market_subcategory = market_subcategory.into();
 
         values
             .into_iter()
             .map(|value| {
-                let mut data: Self = value.into();
-                data.market_category = category.clone();
-                data.market_subcategory = subcategory.clone();
-                data
+                let mut v: Self = value.into();
+                let info = v.market_info.get_or_insert_with(Default::default);
+                info.market_category = market_category.clone();
+                info.market_subcategory = market_subcategory.clone();
+
+                v
             })
             .collect()
     }
@@ -326,8 +374,8 @@ pub struct MarketTagInfo {
     pub market_subcategory: &'static str,
 }
 
-impl std::fmt::Display for MarketTagInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for MarketTagInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}_{}", self.market_category, self.market_subcategory,)
     }
 }
@@ -357,14 +405,14 @@ impl MarketTag {
     }
 }
 
-impl TryFrom<qdrant::ScoredPoint> for protos::Matches {
+impl TryFrom<qdrant::ScoredPoint> for protos::MatchCandidate {
     type Error = anyhow::Error;
 
     fn try_from(value: qdrant::ScoredPoint) -> Result<Self, Self::Error> {
         let payload = protos::QdrantPayload::try_from(value.payload)?;
-        Ok(protos::Matches {
+        Ok(protos::MatchCandidate {
             scored: value.score,
-            r#match: Some(payload),
+            market_info: payload.market_info,
         })
     }
 }
@@ -376,11 +424,11 @@ impl protos::SimilarityHit {
     ) -> Result<Self> {
         let matches = matches
             .into_iter()
-            .map(protos::Matches::try_from)
-            .collect::<Result<Vec<protos::Matches>, anyhow::Error>>()?;
+            .map(protos::MatchCandidate::try_from)
+            .collect::<Result<Vec<protos::MatchCandidate>, anyhow::Error>>()?;
 
         Ok(Self {
-            anchor: Some(anchor),
+            anchor: anchor.market_info,
             matches,
         })
     }
@@ -390,7 +438,7 @@ impl fmt::Display for protos::SimilarityHit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Some(anchor) = &self.anchor else {
             writeln!(f, "ANCHOR MARKET: <missing>")?;
-            return fmt::Result::Ok(());
+            return Ok(());
         };
 
         writeln!(f, "==============start================")?;
@@ -407,20 +455,20 @@ impl fmt::Display for protos::SimilarityHit {
 
         writeln!(f, "CANDIDATE MATCHES: {}", self.matches.len())?;
 
-        for (i, r#match) in self.matches.iter().enumerate() {
+        for (i, match_candidate) in self.matches.iter().enumerate() {
             writeln!(f, "\nMatch #{}", i + 1)?;
-            writeln!(f, "{match}")?;
+            writeln!(f, "{match_candidate}")?;
         }
         writeln!(f, "==============end================")?;
 
-        fmt::Result::Ok(())
+        Ok(())
     }
 }
 
-impl fmt::Display for protos::Matches {
+impl fmt::Display for protos::MatchCandidate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Some(r#match) = &self.r#match else {
-            return fmt::Result::Ok(());
+        let Some(r#match) = &self.market_info else {
+            return Ok(());
         };
 
         writeln!(f, "----------------------------------------")?;
@@ -433,6 +481,6 @@ impl fmt::Display for protos::Matches {
         writeln!(f, "Rules : {}", r#match.rules)?;
         writeln!(f, "ticker : {}", r#match.market_id)?;
 
-        fmt::Result::Ok(())
+        Ok(())
     }
 }

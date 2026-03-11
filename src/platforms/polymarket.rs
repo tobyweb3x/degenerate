@@ -2,11 +2,10 @@ use super::utils;
 use crate::models::QdrantMarketConverter;
 use crate::vector_store;
 use crate::{
-    constants,
     models::{self, protos},
 };
 use alloy::{hex, signers::local::PrivateKeySigner};
-use anyhow::{Context, Ok, Result};
+use anyhow::{Context, Result};
 use chrono::{Duration as ChronoDuration, SecondsFormat, Utc};
 use polymarket_hft::client::polymarket::{clob, clob::ws::WsMessage, gamma};
 use std::{fs, path::Path, time::Duration};
@@ -29,6 +28,10 @@ impl MyPolymarketClient {
             clob_ws_client: clob::ws::ClobWsClient::new(),
             qdrant_client,
         }
+    }
+
+    pub fn gamma_client(&self) -> &gamma::Client {
+        &self.gamma_client
     }
 
     pub async fn run_polymarket(&mut self, shutdown: CancellationToken) -> Result<()> {
@@ -79,7 +82,8 @@ impl MyPolymarketClient {
                 let value = self
                     .gamma_client
                     .get_market_by_slug(msg.slug.as_str(), Some(true))
-                    .await?;
+                    .await
+                    .context("error getting polymarket data by slug")?;
 
                 let Some(ref tags) = value.tags else {
                     anyhow::bail!("tags are missing")
@@ -100,7 +104,7 @@ impl MyPolymarketClient {
                         qdrant_payload,
                         vector_store::SIMILARITY_SCORE_THRESHOLD,
                         vector_store::VectorStore::create_cross_platform_filter(
-                            Some(constants::PLATFORM_POLYMARKET.to_string()),
+                            Some(protos::Platform::Polymarket),
                             &market,
                         ),
                     )
@@ -162,8 +166,8 @@ impl MyPolymarketClient {
         let mut error_count = 0;
         while let Some(res) = join_set.join_next().await {
             match res {
-                std::result::Result::Ok(std::result::Result::Ok(())) => {}
-                std::result::Result::Ok(std::result::Result::Err(e)) => {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
                     let in_hrs = duration / (60 * 60);
                     tracing::error!(
                         "polymarket sport backfill failed for duration({in_hrs}hrs) : {e:?}"
@@ -171,7 +175,7 @@ impl MyPolymarketClient {
                     error_count += 1;
                 }
 
-                std::result::Result::Err(join_err) => {
+                Err(join_err) => {
                     tracing::error!("polymarket sport backfill task panicked: {join_err:?}");
                     error_count += 1;
                 }
@@ -239,7 +243,7 @@ impl MyPolymarketClient {
             .into_iter()
             .map(|point| {
                 let filter = vector_store::VectorStore::create_cross_platform_filter(
-                    Some(constants::PLATFORM_POLYMARKET.to_string()),
+                    Some(protos::Platform::Polymarket),
                     &market,
                 );
                 (point, filter)
@@ -254,7 +258,7 @@ impl MyPolymarketClient {
     pub async fn backfill_polymarket_history(&self, shutdown: CancellationToken) -> Result<()> {
         let last_insert = self
             .qdrant_client
-            .get_last_insert_time(constants::PLATFORM_POLYMARKET)
+            .get_last_insert_time(protos::Platform::Polymarket)
             .await?;
 
         let duration = match last_insert {

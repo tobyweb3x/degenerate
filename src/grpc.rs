@@ -9,7 +9,7 @@ use tonic::transport::Endpoint;
 const GRPC_URL: &str = "http://127.0.0.1:50051";
 const KEEPALIVE_TIME: time::Duration = time::Duration::from_secs(10);
 const KEEPALIVE_TIMEOUT: time::Duration = time::Duration::from_secs(2);
-const MAX_RETRIES: usize = 20;
+const MAX_RETRIES: usize = 30;
 const RETRY_DELAY: time::Duration = time::Duration::from_secs(2);
 
 pub async fn run_grpc_client(
@@ -30,7 +30,7 @@ pub async fn run_grpc_client(
             MAX_RETRIES
         );
 
-        let start_time = time::Instant::now();
+        let session_start = time::Instant::now();
 
         let endpoint = Endpoint::from_static(GRPC_URL)
             .http2_keep_alive_interval(KEEPALIVE_TIME)
@@ -56,7 +56,8 @@ pub async fn run_grpc_client(
             }
         }
 
-        if start_time.elapsed() > time::Duration::from_secs(60) {
+        if session_start.elapsed() > time::Duration::from_secs(60) {
+            tracing::info!("Connection was stable for >60s before dropping. Resetting retries.");
             retries = 0;
         } else {
             retries += 1;
@@ -117,7 +118,7 @@ async fn connect_and_run_session(
             server_msg = inbound_stream.message() => { // from grpc server
                 match server_msg {
                     Ok(Some(ebo)) => {
-                        if bot_inbound_tx.send(ebo).await.is_err() { // to bot
+                        if bot_inbound_tx.send(ebo).await.is_err() { // to bot (picker)
                             return Err(anyhow::anyhow!("bot inbound receiver dropped"));
                         }
                     }

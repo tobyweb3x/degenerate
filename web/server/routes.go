@@ -21,10 +21,16 @@ func (a *App) Routes() *chi.Mux {
 
 	r.Get("/", a.dashboardPage)
 	r.Get("/dashboard", a.dashboardPage)
-	r.Post("/resolve/submit", a.resolveSubmit)
-	r.Get("/resolve/{correlationId}", a.resolvePage)
-	r.Get("/resolve", a.needsResolvePage)
-	r.Post("/delete/{correlationId}", a.deleteNeedsResolve)
+
+	r.Post("/resolve/hit/submit/{correlationId}", a.resolveSubmit)
+	r.Get("/resolve/hit/{correlationId}", a.resolvePage)
+	
+	r.Get("/hits", a.similarityHitPage)
+	r.Get("/arbs", a.arbsPage)
+
+
+	r.Post("/delete/hit/{correlationId}", a.deleteHit)
+	r.Post("/delete/arb/{correlationId}", a.deleteArb)
 
 	var staticFiles = fs.FS(frontend.AssetsDir)
 	staticFs, _ := fs.Sub(staticFiles, "public/assets")

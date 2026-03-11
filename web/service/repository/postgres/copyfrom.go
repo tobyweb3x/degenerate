@@ -9,13 +9,13 @@ import (
 	"context"
 )
 
-// iteratorForBulkInsertNeedsResolve implements pgx.CopyFromSource.
-type iteratorForBulkInsertNeedsResolve struct {
-	rows                 []BulkInsertNeedsResolveParams
+// iteratorForBulkInsertSimilarityHits implements pgx.CopyFromSource.
+type iteratorForBulkInsertSimilarityHits struct {
+	rows                 []BulkInsertSimilarityHitsParams
 	skippedFirstNextCall bool
 }
 
-func (r *iteratorForBulkInsertNeedsResolve) Next() bool {
+func (r *iteratorForBulkInsertSimilarityHits) Next() bool {
 	if len(r.rows) == 0 {
 		return false
 	}
@@ -27,19 +27,19 @@ func (r *iteratorForBulkInsertNeedsResolve) Next() bool {
 	return len(r.rows) > 0
 }
 
-func (r iteratorForBulkInsertNeedsResolve) Values() ([]interface{}, error) {
+func (r iteratorForBulkInsertSimilarityHits) Values() ([]interface{}, error) {
 	return []interface{}{
 		r.rows[0].CorrelationID,
-		r.rows[0].ArbFoundAt,
+		r.rows[0].FoundAt,
 		r.rows[0].SimilarityHit,
 		r.rows[0].ArbType,
 	}, nil
 }
 
-func (r iteratorForBulkInsertNeedsResolve) Err() error {
+func (r iteratorForBulkInsertSimilarityHits) Err() error {
 	return nil
 }
 
-func (q *Queries) BulkInsertNeedsResolve(ctx context.Context, arg []BulkInsertNeedsResolveParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"needs_resolve"}, []string{"correlation_id", "arb_found_at", "similarity_hit", "arb_type"}, &iteratorForBulkInsertNeedsResolve{rows: arg})
+func (q *Queries) BulkInsertSimilarityHits(ctx context.Context, arg []BulkInsertSimilarityHitsParams) (int64, error) {
+	return q.db.CopyFrom(ctx, []string{"similarity_hits"}, []string{"correlation_id", "found_at", "similarity_hit", "arb_type"}, &iteratorForBulkInsertSimilarityHits{rows: arg})
 }

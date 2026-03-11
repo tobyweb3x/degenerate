@@ -8,10 +8,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type NeedsResolve struct {
+type Arb struct {
 	ID            int64              `json:"id"`
 	CorrelationID string             `json:"correlation_id"`
-	ArbFoundAt    pgtype.Timestamptz `json:"arb_found_at"`
+	FoundAt       pgtype.Timestamptz `json:"found_at"`
+	Arbs          []byte             `json:"arbs"`
+	Confirmed     bool               `json:"confirmed"`
+	Running       bool               `json:"running"`
+	ArbType       string             `json:"arb_type"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type SimilarityHit struct {
+	ID            int64              `json:"id"`
+	CorrelationID string             `json:"correlation_id"`
+	FoundAt       pgtype.Timestamptz `json:"found_at"`
 	SimilarityHit []byte             `json:"similarity_hit"`
 	ArbType       string             `json:"arb_type"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`

@@ -42,7 +42,7 @@ templ document(pageMainComp, pageAfterBodyComp templ.Component) {
 				@navItem()
 				<main id="mainContent" class="py-4 pr-4 rounded-3xl h-full overflow-hidden">
 					if pageMainComp == nil {
-						@NeedsResolvePartial(nil)
+						@dashboardMain()
 					} else {
 						@pageMainComp
 					}
@@ -94,7 +94,7 @@ templ navItem() {
 					</li>
 					<li>
 						<a
-							href="/resolve"
+							href="/hits"
 							class="hidden min-[83.5rem]:flex gap-4 justify-center items-center rounded-full focus:outline-hidden focus:scale-y-110 focus:scale-x-110 focus:bg-menuGradient transition duration-500 ease-in-out"
 						>
 							<img
@@ -102,16 +102,16 @@ templ navItem() {
 								class="w-6 aspect-square my-[0.82rem]"
 							/>
 							<p class="w-29 aspect-116/10 mr-[2.467rem]">
-								Resolve
+								Hits
 							</p>
 						</a>
 						<a
-							href="/resolve"
-							title="Resolve"
+							href="/hits"
+							title="Similarity Hits"
 							class="flex min-[83.5rem]:hidden py-[0.82rem] px-[0.40625rem] gap-4 justify-center items-center rounded-full focus:outline-hidden focus:scale-y-110 focus:scale-x-110 focus:bg-menuGradient transition duration-500 ease-in-out"
 						>
 							<img
-								title="Resolve"
+								title="Similarity Hits"
 								src="/assets/svg/Records.svg"
 								class="w-6 aspect-square my-[0.82rem]"
 							/>
@@ -119,7 +119,7 @@ templ navItem() {
 					</li>
 					<li>
 						<a
-							href="#"
+							href="/arbs"
 							class="hidden min-[83.5rem]:flex gap-4 justify-center items-center rounded-full focus:outline-hidden focus:scale-y-110 focus:scale-x-110 focus:bg-menuGradient transition duration-500 ease-in-out"
 						>
 							<img
@@ -127,16 +127,16 @@ templ navItem() {
 								class="w-6 aspect-square my-[0.82rem]"
 							/>
 							<p class="w-29 aspect-116/10 mr-[2.467rem]">
-								Update Token
+								Arbs
 							</p>
 						</a>
 						<a
-							href="#"
-							title="Update Token"
+							href="/arbs"
+							title="Arbs"
 							class="flex min-[83.5rem]:hidden py-[0.82rem] px-[0.40625rem] gap-4 justify-center items-center rounded-full focus:outline-hidden focus:scale-y-110 focus:scale-x-110 focus:bg-menuGradient transition duration-500 ease-in-out"
 						>
 							<img
-								title="Update Token"
+								title="Arbs"
 								src="/assets/svg/Update token.svg"
 								class="w-6 aspect-square my-[0.82rem]"
 							/>

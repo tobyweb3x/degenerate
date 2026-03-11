@@ -1,12 +1,21 @@
 package frontend
 
 import (
-	"encoding/json"
-	"fmt"
 	"time"
 	"web/protos"
 	"web/service/repository/postgres"
+
+	"google.golang.org/protobuf/encoding/protojson"
 )
+
+var ProtoMarshaler = protojson.MarshalOptions{
+	UseProtoNames:   true,
+	EmitUnpopulated: true,
+}
+
+var ProtoUnMarshaler = protojson.UnmarshalOptions{
+	DiscardUnknown: true,
+}
 
 // TemplateModel is a generic container for any Ebo payload type
 type TemplateModel[T any] struct {
@@ -15,11 +24,11 @@ type TemplateModel[T any] struct {
 	Payload       T
 }
 
-func FromCrossPlatformArbs(
-	param ...postgres.NeedsResolve,
-) ([]TemplateModel[protos.Ebo_CrossPlatformArb], error) {
+func ToCrossPlatformHits(
+	param ...postgres.SimilarityHit,
+) ([]TemplateModel[protos.Ebo_CrossPlatformHit], error) {
 
-	r := make([]TemplateModel[protos.Ebo_CrossPlatformArb], 0, len(param))
+	r := make([]TemplateModel[protos.Ebo_CrossPlatformHit], 0, len(param))
 
 	for _, v := range param {
 		var hit protos.SimilarityHit
@@ -28,15 +37,41 @@ func FromCrossPlatformArbs(
 			continue
 		}
 
-		if err := json.Unmarshal(v.SimilarityHit, &hit); err != nil {
-			fmt.Println("it from here")
+		if err := ProtoUnMarshaler.Unmarshal(v.SimilarityHit, &hit); err != nil {
+			return nil, err
+		}
+
+		r = append(r, TemplateModel[protos.Ebo_CrossPlatformHit]{
+			CorrelationId: v.CorrelationID,
+			ArbFoundAt:    v.FoundAt.Time,
+			Payload:       protos.Ebo_CrossPlatformHit{CrossPlatformHit: &hit},
+		})
+	}
+
+	return r, nil
+}
+
+func ToCrossPlatformArbs(
+	param ...postgres.Arb,
+) ([]TemplateModel[protos.Ebo_CrossPlatformArb], error) {
+
+	r := make([]TemplateModel[protos.Ebo_CrossPlatformArb], 0, len(param))
+
+	for _, v := range param {
+		var arb protos.Arb
+
+		if len(v.Arbs) == 0 {
+			continue
+		}
+
+		if err := ProtoUnMarshaler.Unmarshal(v.Arbs, &arb); err != nil {
 			return nil, err
 		}
 
 		r = append(r, TemplateModel[protos.Ebo_CrossPlatformArb]{
 			CorrelationId: v.CorrelationID,
-			ArbFoundAt:    v.ArbFoundAt.Time,
-			Payload:       protos.Ebo_CrossPlatformArb{CrossPlatformArb: &hit},
+			ArbFoundAt:    v.FoundAt.Time,
+			Payload:       protos.Ebo_CrossPlatformArb{CrossPlatformArb: &arb},
 		})
 	}
 

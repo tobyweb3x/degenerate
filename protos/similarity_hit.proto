@@ -3,37 +3,101 @@ syntax = "proto3";
 package similarityhit;
 option go_package = "web/protos;";
 
-message QdrantPayload {
-    string uuid = 1;
-    string question = 2;
-    string outcome = 3;
-    string clob_token_ids = 4;
-    string rules = 5;
-    string market_id = 6;
-    string market_category = 7;
-    string market_subcategory = 8;
-    string platform = 9;
-    string end_date = 10;
-    int64 inserted_at = 11; 
+// ------------------------------------------------
+// PLATFORM
+// ------------------------------------------------
+
+enum Platform {
+  POLYMARKET = 0;
+  KALSHI = 1;
 }
 
-message Matches {
+// ------------------------------------------------
+// SIMILARITY HIT
+// ------------------------------------------------
+
+message MarketInfo {
+    string uuid = 1;
+    string market_id = 2;
+    string question = 3;
+    string outcome = 4;
+    string rules = 5;
+    string market_category = 6;
+    string market_subcategory = 7;
+    Platform platform = 8;
+    string end_date = 9;
+}
+
+message QdrantPayload {
+    MarketInfo market_info = 1;
+    int64 qdrant_inserted_at = 10; 
+}
+
+message MatchCandidate {
     float scored = 1;
-    QdrantPayload match = 2;
+    MarketInfo market_info = 2;
 }
 
 message SimilarityHit {
-    QdrantPayload anchor = 1;
-    repeated Matches matches = 2;
+    MarketInfo anchor = 1;
+    repeated MatchCandidate matches = 2;
 }
+
+// ------------------------------------------------
+// DISCOVERY
+// ------------------------------------------------
+
+enum Leg {
+  LEG_LEFT = 0;  
+  LEG_RIGHT = 1; 
+}
+
+message Discovery {
+  MarketInfo market_info = 1;
+  Leg leg = 2;
+  string leg_str = 3;
+}
+
+message DiscoveredArb {
+  Discovery anchor = 1;
+  Discovery match = 2;
+  float scored = 3;
+}
+
+message DiscoveredArbList {
+    repeated DiscoveredArb arbs = 1;
+}
+
+// ------------------------------------------------
+// ARB
+// ------------------------------------------------
+
+message ArbEssentials {
+  Discovery discovery = 1;
+  string token_id = 2;
+}
+
+message Arb {
+  ArbEssentials anchor = 1;
+  ArbEssentials match = 2;
+  float scored = 3;
+}
+
+// ------------------------------------------------
+// THE ENVELOPE
+// ------------------------------------------------
 
 message Ebo {
     string correlation_id = 1;
-    int64 arb_found_at = 2;
+    int64 found_at = 2;
 
     oneof action {
-        SimilarityHit cross_platform_arb = 3;
-        SimilarityHit intra_platform_arb = 4;
+        SimilarityHit cross_platform_hit = 3;
+        SimilarityHit intra_platform_hit = 4;
+        DiscoveredArbList  cross_platform_arb_discovery = 5;
+        DiscoveredArbList  intra_platform_arb_discovery = 6;
+        Arb cross_platform_arb = 7;
+        Arb intra_platform_arb = 8;
     }
 }
 

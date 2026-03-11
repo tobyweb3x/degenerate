@@ -26,10 +26,10 @@ func NewService(postgresDb PostgresDb) *Repository {
 	return &s
 }
 
-func (r *Repository) InsertNewNeedsResolveCrossArbs(ctx context.Context, correctionId string, timestamp time.Time, similarityHit []byte) error {
-	return r.dbQuery.InsertNeedsResolve(ctx, postgres.InsertNeedsResolveParams{
+func (r *Repository) InsertNewCrossHit(ctx context.Context, correctionId string, timestamp time.Time, similarityHit []byte) error {
+	return r.dbQuery.InsertNewSimilarityHit(ctx, postgres.InsertNewSimilarityHitParams{
 		CorrelationID: correctionId,
-		ArbFoundAt: pgtype.Timestamptz{
+		FoundAt: pgtype.Timestamptz{
 			Time:             timestamp,
 			InfinityModifier: pgtype.Finite,
 			Valid:            true,
@@ -39,10 +39,36 @@ func (r *Repository) InsertNewNeedsResolveCrossArbs(ctx context.Context, correct
 	})
 }
 
-func (r *Repository) InsertNewNeedsResolvedIntraArbs(ctx context.Context, correctionId string, timestamp time.Time, similarityHit []byte) error {
-	return r.dbQuery.InsertNeedsResolve(ctx, postgres.InsertNeedsResolveParams{
+func (r *Repository) InsertNewCrossArb(ctx context.Context, correctionId string, timestamp time.Time, arb []byte) error {
+	return r.dbQuery.InsertNewArb(ctx, postgres.InsertNewArbParams{
 		CorrelationID: correctionId,
-		ArbFoundAt: pgtype.Timestamptz{
+		FoundAt: pgtype.Timestamptz{
+			Time:             timestamp,
+			InfinityModifier: pgtype.Finite,
+			Valid:            true,
+		},
+		Arbs:    arb,
+		ArbType: "cross",
+	})
+}
+
+func (r *Repository) InsertNewIntraArb(ctx context.Context, correctionId string, timestamp time.Time, arb []byte) error {
+	return r.dbQuery.InsertNewArb(ctx, postgres.InsertNewArbParams{
+		CorrelationID: correctionId,
+		FoundAt: pgtype.Timestamptz{
+			Time:             timestamp,
+			InfinityModifier: pgtype.Finite,
+			Valid:            true,
+		},
+		Arbs:    arb,
+		ArbType: "intra",
+	})
+}
+
+func (r *Repository) InsertNewIntraHit(ctx context.Context, correctionId string, timestamp time.Time, similarityHit []byte) error {
+	return r.dbQuery.InsertNewSimilarityHit(ctx, postgres.InsertNewSimilarityHitParams{
+		CorrelationID: correctionId,
+		FoundAt: pgtype.Timestamptz{
 			Time:             timestamp,
 			InfinityModifier: pgtype.Finite,
 			Valid:            true,
@@ -52,23 +78,48 @@ func (r *Repository) InsertNewNeedsResolvedIntraArbs(ctx context.Context, correc
 	})
 }
 
-func (r *Repository) GetAllCrossArbs(ctx context.Context) ([]postgres.NeedsResolve, error) {
-	return r.dbQuery.GetRecentCrossArbs(ctx, 1_000)
+func (r *Repository) GetRecentCrossHits(ctx context.Context) ([]postgres.SimilarityHit, error) {
+	return r.dbQuery.GetRecentCrossHits(ctx, 5_000)
 }
 
-func (r *Repository) GetNeedsResolveByCorrelationID(ctx context.Context, correctionId string) (postgres.NeedsResolve, error) {
-	needsResolved, err := r.dbQuery.GetNeedsResolveByCorrelationID(ctx, correctionId)
+func (r *Repository) GetRecentCrossArbs(ctx context.Context) ([]postgres.Arb, error) {
+	return r.dbQuery.GetRecentCrossArbs(ctx, 5_000)
+}
+
+func (r *Repository) GetSimilarityHitByCorrelationID(ctx context.Context, correctionId string) (postgres.SimilarityHit, error) {
+	hit, err := r.dbQuery.GetSimilarityHitByCorrelationID(ctx, correctionId)
 	if err != nil {
-		return postgres.NeedsResolve{}, err
+		return postgres.SimilarityHit{}, err
 	}
 
-	return needsResolved, nil
+	return hit, nil
 }
 
-func (r *Repository) BulkInsertNewNeedsResolve(ctx context.Context, bulk ...postgres.BulkInsertNeedsResolveParams) (int64, error) {
-	return r.dbQuery.BulkInsertNeedsResolve(ctx, bulk)
+func (r *Repository) GetArbByCorrelationID(ctx context.Context, correctionId string) (postgres.Arb, error) {
+	hit, err := r.dbQuery.GetArbByCorrelationID(ctx, correctionId)
+	if err != nil {
+		return postgres.Arb{}, err
+	}
+
+	return hit, nil
 }
 
-func (r *Repository) DeleteNeedsResolve(ctx context.Context, correctionID string) error {
-	return r.dbQuery.DeleteNeedsResolve(ctx, correctionID)
+func (r *Repository) BulkInsertSimilarityHits(ctx context.Context, bulk ...postgres.BulkInsertSimilarityHitsParams) (int64, error) {
+	return r.dbQuery.BulkInsertSimilarityHits(ctx, bulk)
+}
+
+func (r *Repository) DeleteSimilarityHit(ctx context.Context, correctionID string) error {
+	return r.dbQuery.DeleteSimilarityHit(ctx, correctionID)
+}
+
+func (r *Repository) DeleteArb(ctx context.Context, correctionID string) error {
+	return r.dbQuery.DeleteArb(ctx, correctionID)
+}
+
+func (r *Repository) UpdateArbConfirm(ctx context.Context, param postgres.UpdateArbConfirmParams) error {
+	return r.dbQuery.UpdateArbConfirm(ctx, param)
+}
+
+func (r *Repository) UpdateArbRunning(ctx context.Context, param postgres.UpdateArbRunningParams) error {
+	return r.dbQuery.UpdateArbRunning(ctx, param)
 }

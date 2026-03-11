@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 	"web/protos"
+	frontend "web/view/pages"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -91,41 +92,62 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.Ebo) (*protos.Ebo, err
 
 	switch p := ebo.Action.(type) {
 
-	case *protos.Ebo_CrossPlatformArb:
-		hit := p.CrossPlatformArb
+	case *protos.Ebo_CrossPlatformHit:
+		hit := p.CrossPlatformHit
 
 		byteData, err := protojson.Marshal(hit)
 		if err != nil {
 			return nil, err
 		}
 
-		// fmt.Printf("PROTO BEFORE JSON:\n%+v\n\n", hit)
-
-		// var h protos.SimilarityHit
-		// if err := protojson.Unmarshal(byteData, &h); err != nil {
-		// 	fmt.Println("it errrored", err.Error())
-		// }
-
-		// fmt.Printf("PROTO AFTER JSON:\n\n%+v\n\n", hit)
-
-		return nil, a.db.InsertNewNeedsResolveCrossArbs(
+		return nil, a.db.InsertNewCrossHit(
 			ctx,
 			ebo.CorrelationId,
-			time.UnixMilli(ebo.ArbFoundAt).UTC(),
+			time.UnixMilli(ebo.FoundAt).UTC(),
 			byteData,
 		)
 
-	case *protos.Ebo_IntraPlatformArb:
-		hit := p.IntraPlatformArb
-		byteData, err := protoMarshaler.Marshal(hit)
+	case *protos.Ebo_IntraPlatformHit:
+		hit := p.IntraPlatformHit
+		byteData, err := frontend.ProtoMarshaler.Marshal(hit)
 		if err != nil {
 			return nil, err
 		}
 
-		return nil, a.db.InsertNewNeedsResolvedIntraArbs(
+		return nil, a.db.InsertNewIntraHit(
 			ctx,
 			ebo.CorrelationId,
-			time.UnixMilli(ebo.ArbFoundAt).UTC(),
+			time.UnixMilli(ebo.FoundAt).UTC(),
+			byteData,
+		)
+
+	case *protos.Ebo_CrossPlatformArb:
+		arb := p.CrossPlatformArb
+
+		byteData, err := protojson.Marshal(arb)
+		if err != nil {
+			return nil, err
+		}
+
+		return nil, a.db.InsertNewCrossArb(
+			ctx,
+			ebo.CorrelationId,
+			time.UnixMilli(ebo.FoundAt).UTC(),
+			byteData,
+		)
+
+	case *protos.Ebo_IntraPlatformArb:
+		arb := p.IntraPlatformArb
+
+		byteData, err := protojson.Marshal(arb)
+		if err != nil {
+			return nil, err
+		}
+
+		return nil, a.db.InsertNewIntraArb(
+			ctx,
+			ebo.CorrelationId,
+			time.UnixMilli(ebo.FoundAt).UTC(),
 			byteData,
 		)
 

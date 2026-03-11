@@ -1,11 +1,10 @@
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber;
 use tracing_subscriber::{EnvFilter, fmt};
 
 mod app;
-mod constants;
 mod grpc;
 mod models;
 mod picker;
@@ -53,7 +52,7 @@ async fn main() -> Result<()> {
             )
         } => {
             match res {
-                std::result::Result::Ok(_) => tracing::info!("all tasks finished successfully"),
+                Ok(_) => tracing::info!("all tasks finished successfully"),
                 Err(e) => {
                     tracing::error!("application crashed, a task failed: {:?}", e);
                     shutdown.cancel();
@@ -76,7 +75,7 @@ async fn main() -> Result<()> {
 
 async fn flatten(handle: tokio::task::JoinHandle<Result<()>>) -> Result<()> {
     match handle.await {
-        std::result::Result::Ok(inner_result) => inner_result,
+        Ok(inner_result) => inner_result,
         Err(join_err) => Err(anyhow::anyhow!("Task Panicked/Cancelled: {}", join_err)),
     }
 }

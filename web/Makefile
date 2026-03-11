@@ -7,3 +7,6 @@ tailwind:
 
 sqlc:
 	@$(MAKE) -C service/repository sqlc
+
+proto-go:
+	@$(MAKE) -C ../ proto-go

@@ -11,37 +11,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type BulkInsertNeedsResolveParams struct {
+type BulkInsertSimilarityHitsParams struct {
 	CorrelationID string             `json:"correlation_id"`
-	ArbFoundAt    pgtype.Timestamptz `json:"arb_found_at"`
+	FoundAt       pgtype.Timestamptz `json:"found_at"`
 	SimilarityHit []byte             `json:"similarity_hit"`
 	ArbType       string             `json:"arb_type"`
 }
 
-const deleteNeedsResolve = `-- name: DeleteNeedsResolve :exec
-DELETE FROM needs_resolve
+const deleteArb = `-- name: DeleteArb :exec
+DELETE FROM arbs
 WHERE correlation_id = $1
 `
 
-func (q *Queries) DeleteNeedsResolve(ctx context.Context, correlationID string) error {
-	_, err := q.db.Exec(ctx, deleteNeedsResolve, correlationID)
+func (q *Queries) DeleteArb(ctx context.Context, correlationID string) error {
+	_, err := q.db.Exec(ctx, deleteArb, correlationID)
 	return err
 }
 
-const getNeedsResolveByCorrelationID = `-- name: GetNeedsResolveByCorrelationID :one
-SELECT id, correlation_id, arb_found_at, similarity_hit, arb_type, created_at
-FROM needs_resolve
+const deleteSimilarityHit = `-- name: DeleteSimilarityHit :exec
+DELETE FROM similarity_hits
 WHERE correlation_id = $1
 `
 
-func (q *Queries) GetNeedsResolveByCorrelationID(ctx context.Context, correlationID string) (NeedsResolve, error) {
-	row := q.db.QueryRow(ctx, getNeedsResolveByCorrelationID, correlationID)
-	var i NeedsResolve
+func (q *Queries) DeleteSimilarityHit(ctx context.Context, correlationID string) error {
+	_, err := q.db.Exec(ctx, deleteSimilarityHit, correlationID)
+	return err
+}
+
+const getArbByCorrelationID = `-- name: GetArbByCorrelationID :one
+SELECT id, correlation_id, found_at, arbs, confirmed, running, arb_type, created_at
+FROM arbs
+WHERE correlation_id = $1
+`
+
+func (q *Queries) GetArbByCorrelationID(ctx context.Context, correlationID string) (Arb, error) {
+	row := q.db.QueryRow(ctx, getArbByCorrelationID, correlationID)
+	var i Arb
 	err := row.Scan(
 		&i.ID,
 		&i.CorrelationID,
-		&i.ArbFoundAt,
-		&i.SimilarityHit,
+		&i.FoundAt,
+		&i.Arbs,
+		&i.Confirmed,
+		&i.Running,
 		&i.ArbType,
 		&i.CreatedAt,
 	)
@@ -49,26 +61,63 @@ func (q *Queries) GetNeedsResolveByCorrelationID(ctx context.Context, correlatio
 }
 
 const getRecentCrossArbs = `-- name: GetRecentCrossArbs :many
-SELECT id, correlation_id, arb_found_at, similarity_hit, arb_type, created_at
-FROM needs_resolve
+SELECT id, correlation_id, found_at, arbs, confirmed, running, arb_type, created_at
+FROM arbs
 WHERE arb_type = 'cross'
 ORDER BY created_at DESC
 LIMIT $1
 `
 
-func (q *Queries) GetRecentCrossArbs(ctx context.Context, limit int32) ([]NeedsResolve, error) {
+func (q *Queries) GetRecentCrossArbs(ctx context.Context, limit int32) ([]Arb, error) {
 	rows, err := q.db.Query(ctx, getRecentCrossArbs, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []NeedsResolve
+	var items []Arb
 	for rows.Next() {
-		var i NeedsResolve
+		var i Arb
 		if err := rows.Scan(
 			&i.ID,
 			&i.CorrelationID,
-			&i.ArbFoundAt,
+			&i.FoundAt,
+			&i.Arbs,
+			&i.Confirmed,
+			&i.Running,
+			&i.ArbType,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getRecentCrossHits = `-- name: GetRecentCrossHits :many
+SELECT id, correlation_id, found_at, similarity_hit, arb_type, created_at
+FROM similarity_hits
+WHERE arb_type = 'cross'
+ORDER BY created_at DESC
+LIMIT $1
+`
+
+func (q *Queries) GetRecentCrossHits(ctx context.Context, limit int32) ([]SimilarityHit, error) {
+	rows, err := q.db.Query(ctx, getRecentCrossHits, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SimilarityHit
+	for rows.Next() {
+		var i SimilarityHit
+		if err := rows.Scan(
+			&i.ID,
+			&i.CorrelationID,
+			&i.FoundAt,
 			&i.SimilarityHit,
 			&i.ArbType,
 			&i.CreatedAt,
@@ -84,26 +133,63 @@ func (q *Queries) GetRecentCrossArbs(ctx context.Context, limit int32) ([]NeedsR
 }
 
 const getRecentIntraArbs = `-- name: GetRecentIntraArbs :many
-SELECT id, correlation_id, arb_found_at, similarity_hit, arb_type, created_at
-FROM needs_resolve
+SELECT id, correlation_id, found_at, arbs, confirmed, running, arb_type, created_at
+FROM arbs
 WHERE arb_type = 'intra'
 ORDER BY created_at DESC
 LIMIT $1
 `
 
-func (q *Queries) GetRecentIntraArbs(ctx context.Context, limit int32) ([]NeedsResolve, error) {
+func (q *Queries) GetRecentIntraArbs(ctx context.Context, limit int32) ([]Arb, error) {
 	rows, err := q.db.Query(ctx, getRecentIntraArbs, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []NeedsResolve
+	var items []Arb
 	for rows.Next() {
-		var i NeedsResolve
+		var i Arb
 		if err := rows.Scan(
 			&i.ID,
 			&i.CorrelationID,
-			&i.ArbFoundAt,
+			&i.FoundAt,
+			&i.Arbs,
+			&i.Confirmed,
+			&i.Running,
+			&i.ArbType,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getRecentIntraHits = `-- name: GetRecentIntraHits :many
+SELECT id, correlation_id, found_at, similarity_hit, arb_type, created_at
+FROM similarity_hits
+WHERE arb_type = 'intra'
+ORDER BY created_at DESC
+LIMIT $1
+`
+
+func (q *Queries) GetRecentIntraHits(ctx context.Context, limit int32) ([]SimilarityHit, error) {
+	rows, err := q.db.Query(ctx, getRecentIntraHits, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SimilarityHit
+	for rows.Next() {
+		var i SimilarityHit
+		if err := rows.Scan(
+			&i.ID,
+			&i.CorrelationID,
+			&i.FoundAt,
 			&i.SimilarityHit,
 			&i.ArbType,
 			&i.CreatedAt,
@@ -118,10 +204,58 @@ func (q *Queries) GetRecentIntraArbs(ctx context.Context, limit int32) ([]NeedsR
 	return items, nil
 }
 
-const insertNeedsResolve = `-- name: InsertNeedsResolve :exec
-INSERT INTO needs_resolve (
+const getSimilarityHitByCorrelationID = `-- name: GetSimilarityHitByCorrelationID :one
+SELECT id, correlation_id, found_at, similarity_hit, arb_type, created_at
+FROM similarity_hits
+WHERE correlation_id = $1
+`
+
+func (q *Queries) GetSimilarityHitByCorrelationID(ctx context.Context, correlationID string) (SimilarityHit, error) {
+	row := q.db.QueryRow(ctx, getSimilarityHitByCorrelationID, correlationID)
+	var i SimilarityHit
+	err := row.Scan(
+		&i.ID,
+		&i.CorrelationID,
+		&i.FoundAt,
+		&i.SimilarityHit,
+		&i.ArbType,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertNewArb = `-- name: InsertNewArb :exec
+INSERT INTO arbs (
     correlation_id,
-    arb_found_at,
+    found_at,
+    arbs,
+    arb_type
+)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (correlation_id) DO NOTHING
+`
+
+type InsertNewArbParams struct {
+	CorrelationID string             `json:"correlation_id"`
+	FoundAt       pgtype.Timestamptz `json:"found_at"`
+	Arbs          []byte             `json:"arbs"`
+	ArbType       string             `json:"arb_type"`
+}
+
+func (q *Queries) InsertNewArb(ctx context.Context, arg InsertNewArbParams) error {
+	_, err := q.db.Exec(ctx, insertNewArb,
+		arg.CorrelationID,
+		arg.FoundAt,
+		arg.Arbs,
+		arg.ArbType,
+	)
+	return err
+}
+
+const insertNewSimilarityHit = `-- name: InsertNewSimilarityHit :exec
+INSERT INTO similarity_hits (
+    correlation_id,
+    found_at,
     similarity_hit,
     arb_type
 )
@@ -129,19 +263,81 @@ VALUES ($1, $2, $3, $4)
 ON CONFLICT (correlation_id) DO NOTHING
 `
 
-type InsertNeedsResolveParams struct {
+type InsertNewSimilarityHitParams struct {
 	CorrelationID string             `json:"correlation_id"`
-	ArbFoundAt    pgtype.Timestamptz `json:"arb_found_at"`
+	FoundAt       pgtype.Timestamptz `json:"found_at"`
 	SimilarityHit []byte             `json:"similarity_hit"`
 	ArbType       string             `json:"arb_type"`
 }
 
-func (q *Queries) InsertNeedsResolve(ctx context.Context, arg InsertNeedsResolveParams) error {
-	_, err := q.db.Exec(ctx, insertNeedsResolve,
+func (q *Queries) InsertNewSimilarityHit(ctx context.Context, arg InsertNewSimilarityHitParams) error {
+	_, err := q.db.Exec(ctx, insertNewSimilarityHit,
 		arg.CorrelationID,
-		arg.ArbFoundAt,
+		arg.FoundAt,
 		arg.SimilarityHit,
 		arg.ArbType,
 	)
 	return err
+}
+
+const updateArbConfirm = `-- name: UpdateArbConfirm :exec
+UPDATE arbs
+SET confirmed = $2
+WHERE correlation_id = $1
+`
+
+type UpdateArbConfirmParams struct {
+	CorrelationID string `json:"correlation_id"`
+	Confirmed     bool   `json:"confirmed"`
+}
+
+func (q *Queries) UpdateArbConfirm(ctx context.Context, arg UpdateArbConfirmParams) error {
+	_, err := q.db.Exec(ctx, updateArbConfirm, arg.CorrelationID, arg.Confirmed)
+	return err
+}
+
+const updateArbRunning = `-- name: UpdateArbRunning :exec
+UPDATE arbs
+SET running = $2
+WHERE correlation_id = $1
+`
+
+type UpdateArbRunningParams struct {
+	CorrelationID string `json:"correlation_id"`
+	Running       bool   `json:"running"`
+}
+
+func (q *Queries) UpdateArbRunning(ctx context.Context, arg UpdateArbRunningParams) error {
+	_, err := q.db.Exec(ctx, updateArbRunning, arg.CorrelationID, arg.Running)
+	return err
+}
+
+const updateArbStatus = `-- name: UpdateArbStatus :one
+UPDATE arbs
+SET confirmed = $2,
+    running = $3
+WHERE correlation_id = $1
+RETURNING id, correlation_id, found_at, arbs, confirmed, running, arb_type, created_at
+`
+
+type UpdateArbStatusParams struct {
+	CorrelationID string `json:"correlation_id"`
+	Confirmed     bool   `json:"confirmed"`
+	Running       bool   `json:"running"`
+}
+
+func (q *Queries) UpdateArbStatus(ctx context.Context, arg UpdateArbStatusParams) (Arb, error) {
+	row := q.db.QueryRow(ctx, updateArbStatus, arg.CorrelationID, arg.Confirmed, arg.Running)
+	var i Arb
+	err := row.Scan(
+		&i.ID,
+		&i.CorrelationID,
+		&i.FoundAt,
+		&i.Arbs,
+		&i.Confirmed,
+		&i.Running,
+		&i.ArbType,
+		&i.CreatedAt,
+	)
+	return i, err
 }

@@ -1,5 +1,5 @@
 use crate::models::{self, protos};
-use anyhow::{Context, Ok, Result};
+use anyhow::Context;
 use candle_core::Device;
 use chrono::{DateTime, Utc};
 use qdrant_client::{
@@ -15,21 +15,19 @@ use qdrant_client::{
 use sentence_transformers_rs::sentence_transformer::{
     SentenceTransformer, SentenceTransformerBuilder, Which,
 };
-use sha2::Digest;
-use sha2::Sha256;
 use std::convert::TryFrom;
 use std::sync::Arc;
 use tokio::{sync::mpsc, task};
 
-pub const COLLECTION_NAME: &str = "arb_hit";
+pub const COLLECTION_NAME: &str = "Aroni";
 
 // Payload Field Names
-pub const FIELD_UUID: &str = "uuid";
-pub const FIELD_MARKET_CATEGORY: &str = "market_category";
-pub const FIELD_PLATFORM: &str = "platform";
-pub const FIELD_MARKET_SUBCATEGORY: &str = "market_subcategory";
-pub const FIELD_END_DATE: &str = "end_date";
-pub const FIELD_INSERTED_AT: &str = "inserted_at";
+pub const FIELD_UUID: &str = "market_info.uuid";
+pub const FIELD_MARKET_CATEGORY: &str = "market_info.market_category";
+pub const FIELD_PLATFORM: &str = "market_info.platform";
+pub const FIELD_MARKET_SUBCATEGORY: &str = "market_info.market_subcategory";
+pub const FIELD_END_DATE: &str = "market_info.end_date";
+pub const FIELD_INSERTED_AT: &str = "qdrant_inserted_at";
 
 pub const SIMILARITY_SCORE_THRESHOLD: f32 = 0.65;
 
@@ -46,7 +44,7 @@ impl VectorStore {
         url: &str,
         collection_name: &'static str,
         tx: mpsc::Sender<protos::Ebo>,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
         let device =
             candle_core::Device::new_metal(0).context("metal device initialization failed")?;
 
@@ -60,7 +58,7 @@ impl VectorStore {
         collection_name: &'static str,
         device: Device,
         tx: mpsc::Sender<protos::Ebo>,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
         let client = Qdrant::from_url(url)
             .skip_compatibility_check()
             .build()
@@ -77,7 +75,7 @@ impl VectorStore {
                 .context("error creating new qdrant collection")?;
         }
 
-        let model = SentenceTransformerBuilder::with_sentence_transformer(&Which::AllMiniLML12v2)
+        let model = SentenceTransformerBuilder::with_sentence_transformer(&Which::AllMiniLML6v2)
             .batch_size(2048)
             .with_device(&device)
             .build()
@@ -91,7 +89,7 @@ impl VectorStore {
         })
     }
 
-    pub async fn disable_hnsw(&self) -> Result<()> {
+    pub async fn disable_hnsw(&self) -> anyhow::Result<()> {
         self.qdrant_client
             .update_collection(
                 UpdateCollectionBuilder::new(self.collection_name)
@@ -100,10 +98,10 @@ impl VectorStore {
             .await
             .context("failed to disable HNSW indexing")?;
 
-        Ok(())
+        anyhow::Ok(())
     }
 
-    pub async fn enable_hnsw(&self, edges_per_node: u64) -> Result<()> {
+    pub async fn enable_hnsw(&self, edges_per_node: u64) -> anyhow::Result<()> {
         let edges_per_node = if edges_per_node == 0 {
             32
         } else {
@@ -119,12 +117,12 @@ impl VectorStore {
             .context("failed to enable HNSW indexing")?;
 
         tracing::info!("payload-index enabled");
-        Ok(())
+        anyhow::Ok(())
     }
 
-    async fn index_payload(&self, field_name: &str, field_type: FieldType) -> Result<()> {
+    async fn index_payload(&self, field_name: &str, field_type: FieldType) -> anyhow::Result<()> {
         if field_name.is_empty() {
-            return Ok(());
+            return anyhow::Ok(());
         }
         self.qdrant_client
             .create_field_index(
@@ -137,15 +135,15 @@ impl VectorStore {
             )
             .await?;
 
-        Ok(())
+        anyhow::Ok(())
     }
 
-    pub async fn setup_qdrant_payload_index(&self) -> Result<()> {
+    pub async fn setup_qdrant_payload_index(&self) -> anyhow::Result<()> {
         self.index_payload(FIELD_UUID, FieldType::Uuid)
             .await
             .context(format!("qdrant index error on {}", FIELD_UUID))?;
 
-        self.index_payload(FIELD_PLATFORM, FieldType::Keyword)
+        self.index_payload(FIELD_PLATFORM, FieldType::Integer)
             .await
             .context(format!("qdrant index error on {}", FIELD_PLATFORM))?;
 
@@ -165,7 +163,7 @@ impl VectorStore {
             .await
             .context(format!("qdrant index error on {}", FIELD_INSERTED_AT))?;
 
-        Ok(())
+        anyhow::Ok(())
     }
 
     pub async fn semantic_similarity_search(
@@ -175,7 +173,7 @@ impl VectorStore {
         limit: u64,
         filter: Option<Filter>,
         with_paylod: bool,
-    ) -> Result<QueryResponse> {
+    ) -> anyhow::Result<QueryResponse> {
         let limit = if limit == 0 { 10 } else { limit };
         let score_threshold = if score_threshold == 0.0 {
             0.8
@@ -201,7 +199,7 @@ impl VectorStore {
     pub async fn semantic_similarity_search_batch(
         &self,
         searches: Vec<QueryPoints>,
-    ) -> Result<QueryBatchResponse> {
+    ) -> anyhow::Result<QueryBatchResponse> {
         let responses = self
             .qdrant_client
             .query_batch(QueryBatchPointsBuilder::new(self.collection_name, searches))
@@ -210,21 +208,21 @@ impl VectorStore {
         Ok(responses)
     }
 
-    pub async fn insert(&self, point: PointStruct) -> Result<()> {
+    pub async fn insert(&self, point: PointStruct) -> anyhow::Result<()> {
         self.qdrant_client
             .upsert_points(UpsertPointsBuilder::new(self.collection_name, vec![point]).wait(true))
             .await?;
 
-        Ok(())
+        anyhow::Ok(())
     }
 
     pub async fn insert_many(
         &self,
         point_structs: Vec<PointStruct>,
         chunk_size: usize,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         if point_structs.is_empty() {
-            return Ok(());
+            return anyhow::Ok(());
         }
 
         let chunk_size = if chunk_size < 2_000 {
@@ -241,7 +239,7 @@ impl VectorStore {
             .await
             .context("failed to insert_many of points")?;
 
-        Ok(())
+        anyhow::Ok(())
     }
 
     pub async fn search_and_insert<T>(
@@ -249,7 +247,7 @@ impl VectorStore {
         point_data: T,
         score_threshold: f32,
         filter: Option<Filter>,
-    ) -> Result<()>
+    ) -> anyhow::Result<()>
     where
         T: TryInto<models::QdrantPointData>,
         T::Error: Into<anyhow::Error>,
@@ -264,10 +262,13 @@ impl VectorStore {
             .await?;
 
         if response.result.len() == 0 {
-            return Ok(());
+            return anyhow::Ok(());
         }
 
-        let clone_anchor = anchor.clone();
+        let clone_anchor_market_info = anchor
+            .clone()
+            .market_info
+            .context("market should not be None")?;
         let hit = protos::SimilarityHit::try_from_results(anchor, response.result)?;
 
         // insert
@@ -275,35 +276,37 @@ impl VectorStore {
 
         self.tx
             .send(protos::Ebo {
-                correlation_id: hex::encode(Sha256::digest(format!(
+                correlation_id: models::generate_uuid_v5(format!(
                     "{}:{}",
-                    clone_anchor.uuid, clone_anchor.market_id
-                ))),
-                arb_found_at: chrono::Utc::now().timestamp_millis(),
-                action: Some(protos::ebo::Action::CrossPlatformArb(hit)),
+                    clone_anchor_market_info.uuid, clone_anchor_market_info.market_id
+                )),
+                found_at: chrono::Utc::now().timestamp_millis(),
+                action: Some(protos::ebo::Action::CrossPlatformHit(hit)),
             })
             .await
             .context("error sending to channel")?;
-        Ok(())
+        anyhow::Ok(())
     }
 
     pub async fn multiple_search_and_inserth<T>(
         &self,
         values: Vec<(T, Option<Filter>)>,
         chunk_size: usize,
-    ) -> Result<()>
+    ) -> anyhow::Result<()>
     where
         T: TryInto<models::QdrantPointData>,
         T::Error: Into<anyhow::Error>,
     {
+
         let (converted_data, filters): (Vec<models::QdrantPointData>, Vec<Option<Filter>>) = values
             .into_iter()
-            .map(|(t, f)| {
-                let data = t.try_into().map_err(Into::into)?;
-                Ok((data, f))
+            .filter_map(|(t, f)| match t.try_into().map_err(Into::into) {
+                Ok(data) => Some((data, f)),
+                Err(e) => {
+                    tracing::warn!("error creating new QdrantPointData(dropped): {e:#?}");
+                    None
+                }
             })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
             .unzip();
 
         let takes: Vec<protos::QdrantPayload> = converted_data
@@ -334,7 +337,7 @@ impl VectorStore {
         let responses = self.semantic_similarity_search_batch(query_points).await?;
 
         if responses.result.len() == 0 {
-            return Ok(());
+            return anyhow::Ok(());
         }
 
         if takes.len() != responses.result.len() {
@@ -353,26 +356,29 @@ impl VectorStore {
                 continue;
             }
 
-            let clone_take = take.clone();
+            let clone_take_market_info = take
+                .clone()
+                .market_info
+                .context("market_info should not be None")?;
             let hit = protos::SimilarityHit::try_from_results(take, response.result)?;
 
             self.tx
                 .send(protos::Ebo {
-                    correlation_id: hex::encode(Sha256::digest(format!(
+                    correlation_id: models::generate_uuid_v5(format!(
                         "{}:{}",
-                        clone_take.uuid, clone_take.market_id
-                    ))),
-                    arb_found_at: chrono::Utc::now().timestamp_millis(),
-                    action: Some(protos::ebo::Action::CrossPlatformArb(hit)),
+                        clone_take_market_info.uuid, clone_take_market_info.market_id
+                    )),
+                    found_at: chrono::Utc::now().timestamp_millis(),
+                    action: Some(protos::ebo::Action::CrossPlatformHit(hit)),
                 })
                 .await
                 .context("error sending to channel")?;
         }
 
-        Ok(())
+        anyhow::Ok(())
     }
 
-    pub async fn delete_points(&self, ids: Vec<PointId>) -> Result<()> {
+    pub async fn delete_points(&self, ids: Vec<PointId>) -> anyhow::Result<()> {
         self.qdrant_client
             .delete_points(
                 DeletePointsBuilder::new("{collection_name}")
@@ -381,10 +387,13 @@ impl VectorStore {
             )
             .await?;
 
-        Ok(())
+        anyhow::Ok(())
     }
 
-    pub async fn create_points<T>(&self, data_list: Vec<T>) -> Result<Vec<(PointStruct, Vec<f32>)>>
+    pub async fn create_points<T>(
+        &self,
+        data_list: Vec<T>,
+    ) -> anyhow::Result<Vec<(PointStruct, Vec<f32>)>>
     where
         T: TryInto<models::QdrantPointData>,
         T::Error: Into<anyhow::Error>,
@@ -396,7 +405,7 @@ impl VectorStore {
         let data_list: Vec<models::QdrantPointData> = data_list
             .into_iter()
             .map(|t| t.try_into().map_err(Into::into))
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
         let texts: Vec<String> = data_list
             .iter()
@@ -421,7 +430,7 @@ impl VectorStore {
         Ok(result)
     }
 
-    pub async fn create_point<T>(&self, data: T) -> Result<(PointStruct, Vec<f32>)>
+    pub async fn create_point<T>(&self, data: T) -> anyhow::Result<(PointStruct, Vec<f32>)>
     where
         T: TryInto<models::QdrantPointData>,
         T::Error: Into<anyhow::Error>,
@@ -444,7 +453,7 @@ impl VectorStore {
     }
 
     pub fn create_cross_platform_filter(
-        platform: Option<String>,
+        platform: Option<protos::Platform>,
         market: &models::MarketTag,
     ) -> Option<Filter> {
         let platform = platform?;
@@ -462,7 +471,7 @@ impl VectorStore {
             ],
             must_not: vec![Condition::matches(
                 FIELD_PLATFORM,
-                MatchValue::Keyword(platform),
+                MatchValue::Integer(platform.into()),
             )],
             should: vec![],
             min_should: None,
@@ -470,32 +479,35 @@ impl VectorStore {
     }
 
     pub fn create_intra_platform_filter(
-        platform: Option<String>,
+        platform: Option<protos::Platform>,
         market: &models::MarketTag,
     ) -> Option<Filter> {
         let platform = platform?;
 
         Some(Filter::must([
-            Condition::matches(FIELD_PLATFORM, platform),
+            Condition::matches(FIELD_PLATFORM, MatchValue::Integer(platform.into())),
             Condition::matches(
                 FIELD_MARKET_CATEGORY,
-                market.info().market_category.to_string(),
+                MatchValue::Keyword(market.info().market_category.to_string()),
             ),
             Condition::matches(
                 FIELD_MARKET_SUBCATEGORY,
-                market.info().market_subcategory.to_string(),
+                MatchValue::Keyword(market.info().market_subcategory.to_string()),
             ),
         ]))
     }
 
-    pub async fn get_last_insert_time(&self, platform_name: &str) -> Result<Option<DateTime<Utc>>> {
+    pub async fn get_last_insert_time(
+        &self,
+        platform_name: protos::Platform,
+    ) -> anyhow::Result<Option<DateTime<Utc>>> {
         let response = self
             .qdrant_client
             .scroll(
                 ScrollPointsBuilder::new(COLLECTION_NAME)
                     .filter(Filter::must([Condition::matches(
                         FIELD_PLATFORM,
-                        platform_name.to_string(),
+                        MatchValue::Integer(platform_name.into()),
                     )]))
                     .limit(1)
                     .with_payload(true)
