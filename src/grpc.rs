@@ -14,8 +14,8 @@ const RETRY_DELAY: time::Duration = time::Duration::from_secs(2);
 
 pub async fn run_grpc_client(
     shutdown: CancellationToken,
-    mut bot_outbound_rx: mpsc::Receiver<protos::Ebo>,
-    bot_inbound_tx: mpsc::Sender<protos::Ebo>,
+    mut bot_outbound_rx: mpsc::Receiver<protos::ClientEbo>,
+    bot_inbound_tx: mpsc::Sender<protos::ServerEbo>,
 ) -> anyhow::Result<()> {
     let mut retries = 0;
 
@@ -77,8 +77,8 @@ pub async fn run_grpc_client(
 async fn connect_and_run_session(
     endpoint: Endpoint,
     shutdown: CancellationToken,
-    bot_outbound_rx: &mut mpsc::Receiver<protos::Ebo>,
-    bot_inbound_tx: &mpsc::Sender<protos::Ebo>,
+    bot_outbound_rx: &mut mpsc::Receiver<protos::ClientEbo>,
+    bot_inbound_tx: &mpsc::Sender<protos::ServerEbo>,
 ) -> anyhow::Result<()> {
     let channel = endpoint
         .connect()

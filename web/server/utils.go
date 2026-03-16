@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 	"web/protos"
+	"web/service/repository/postgres"
 	frontend "web/view/pages"
 )
 
@@ -72,13 +73,68 @@ func setLeg(leg int) (protos.Leg, error) {
 	return 0, fmt.Errorf("wrong leg: %d", leg)
 }
 
-func newCrossPlatformArbDiscovery(arbs []*protos.DiscoveredArb) *protos.Ebo {
-	return &protos.Ebo{
+func newCrossPlatformArbDiscovery(arbs []*protos.DiscoveredArb) *protos.ServerEbo {
+	return &protos.ServerEbo{
 		FoundAt: time.Now().UnixMilli(),
-		Action: &protos.Ebo_CrossPlatformArbDiscovery{
+		Action: &protos.ServerEbo_CrossPlatformArbDiscovery{
 			CrossPlatformArbDiscovery: &protos.DiscoveredArbList{
 				Arbs: arbs,
 			},
 		},
 	}
+}
+
+func countPlatformAchorsfromHit(templModels []frontend.TemplateModel[protos.ClientEbo_CrossPlatformHit]) frontend.PlatformAchorCount {
+	var (
+		kalshiCount, polymarketCount int
+	)
+	for _, v := range templModels {
+		if v.Payload.CrossPlatformHit.Anchor.Platform == protos.Platform_POLYMARKET {
+			polymarketCount++
+		}
+
+		if v.Payload.CrossPlatformHit.Anchor.Platform == protos.Platform_KALSHI {
+			kalshiCount++
+		}
+	}
+
+	return frontend.PlatformAchorCount{
+		PolymarketCount: polymarketCount,
+		KalshiCount:     kalshiCount,
+	}
+}
+
+func countPlatformAchorsFromArb(templModels []frontend.TemplateModel[protos.ClientEbo_CrossPlatformArb]) frontend.PlatformAchorCount {
+	var (
+		kalshiCount, polymarketCount int
+	)
+	for _, v := range templModels {
+		if v.Payload.CrossPlatformArb.Anchor.Discovery.MarketInfo.Platform == protos.Platform_POLYMARKET {
+			polymarketCount++
+		}
+
+		if v.Payload.CrossPlatformArb.Anchor.Discovery.MarketInfo.Platform == protos.Platform_KALSHI {
+			kalshiCount++
+		}
+	}
+
+	return frontend.PlatformAchorCount{
+		PolymarketCount: polymarketCount,
+		KalshiCount:     kalshiCount,
+	}
+}
+
+func countArbStatus(param ...postgres.Arb) frontend.ArbStatusCount {
+
+	count := frontend.ArbStatusCount{}
+	for _, v := range param {
+		switch {
+		case v.Running:
+			count.Confirmed++
+			count.Running++
+		case v.Confirmed:
+			count.Confirmed++
+		}
+	}
+	return count
 }

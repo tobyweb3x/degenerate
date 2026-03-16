@@ -14,6 +14,11 @@ type EnvConfig struct {
 		Dev         string `env:"DATABASE_URL_DEV"`
 	}
 
+	KalshiApiCredentials struct {
+		ApiKeyID           string `env:"KALSHI_API_KEY_ID"`
+		PrivateKeyFilePath string `env:"KALSHI_PK_FILE_PATH"`
+	}
+
 	Build    string `env:"BUILD"`
 	HttpPort string `env:"HTTP_PORT"`
 	GrpcPort string `env:"GRPC_PORT"`

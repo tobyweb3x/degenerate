@@ -26,9 +26,9 @@ func NewService(postgresDb PostgresDb) *Repository {
 	return &s
 }
 
-func (r *Repository) InsertNewCrossHit(ctx context.Context, correctionId string, timestamp time.Time, similarityHit []byte) error {
+func (r *Repository) InsertNewCrossHit(ctx context.Context, correlationId string, timestamp time.Time, similarityHit []byte) error {
 	return r.dbQuery.InsertNewSimilarityHit(ctx, postgres.InsertNewSimilarityHitParams{
-		CorrelationID: correctionId,
+		CorrelationID: correlationId,
 		FoundAt: pgtype.Timestamptz{
 			Time:             timestamp,
 			InfinityModifier: pgtype.Finite,
@@ -39,9 +39,9 @@ func (r *Repository) InsertNewCrossHit(ctx context.Context, correctionId string,
 	})
 }
 
-func (r *Repository) InsertNewCrossArb(ctx context.Context, correctionId string, timestamp time.Time, arb []byte) error {
+func (r *Repository) InsertNewCrossArb(ctx context.Context, correlationId string, timestamp time.Time, arb []byte) error {
 	return r.dbQuery.InsertNewArb(ctx, postgres.InsertNewArbParams{
-		CorrelationID: correctionId,
+		CorrelationID: correlationId,
 		FoundAt: pgtype.Timestamptz{
 			Time:             timestamp,
 			InfinityModifier: pgtype.Finite,
@@ -52,9 +52,9 @@ func (r *Repository) InsertNewCrossArb(ctx context.Context, correctionId string,
 	})
 }
 
-func (r *Repository) InsertNewIntraArb(ctx context.Context, correctionId string, timestamp time.Time, arb []byte) error {
+func (r *Repository) InsertNewIntraArb(ctx context.Context, correlationId string, timestamp time.Time, arb []byte) error {
 	return r.dbQuery.InsertNewArb(ctx, postgres.InsertNewArbParams{
-		CorrelationID: correctionId,
+		CorrelationID: correlationId,
 		FoundAt: pgtype.Timestamptz{
 			Time:             timestamp,
 			InfinityModifier: pgtype.Finite,
@@ -65,9 +65,9 @@ func (r *Repository) InsertNewIntraArb(ctx context.Context, correctionId string,
 	})
 }
 
-func (r *Repository) InsertNewIntraHit(ctx context.Context, correctionId string, timestamp time.Time, similarityHit []byte) error {
+func (r *Repository) InsertNewIntraHit(ctx context.Context, correlationId string, timestamp time.Time, similarityHit []byte) error {
 	return r.dbQuery.InsertNewSimilarityHit(ctx, postgres.InsertNewSimilarityHitParams{
-		CorrelationID: correctionId,
+		CorrelationID: correlationId,
 		FoundAt: pgtype.Timestamptz{
 			Time:             timestamp,
 			InfinityModifier: pgtype.Finite,
@@ -86,8 +86,8 @@ func (r *Repository) GetRecentCrossArbs(ctx context.Context) ([]postgres.Arb, er
 	return r.dbQuery.GetRecentCrossArbs(ctx, 5_000)
 }
 
-func (r *Repository) GetSimilarityHitByCorrelationID(ctx context.Context, correctionId string) (postgres.SimilarityHit, error) {
-	hit, err := r.dbQuery.GetSimilarityHitByCorrelationID(ctx, correctionId)
+func (r *Repository) GetSimilarityHitByCorrelationID(ctx context.Context, correlationId string) (postgres.SimilarityHit, error) {
+	hit, err := r.dbQuery.GetSimilarityHitByCorrelationID(ctx, correlationId)
 	if err != nil {
 		return postgres.SimilarityHit{}, err
 	}
@@ -95,8 +95,8 @@ func (r *Repository) GetSimilarityHitByCorrelationID(ctx context.Context, correc
 	return hit, nil
 }
 
-func (r *Repository) GetArbByCorrelationID(ctx context.Context, correctionId string) (postgres.Arb, error) {
-	hit, err := r.dbQuery.GetArbByCorrelationID(ctx, correctionId)
+func (r *Repository) GetArbByCorrelationID(ctx context.Context, correlationId string) (postgres.Arb, error) {
+	hit, err := r.dbQuery.GetArbByCorrelationID(ctx, correlationId)
 	if err != nil {
 		return postgres.Arb{}, err
 	}
@@ -108,18 +108,32 @@ func (r *Repository) BulkInsertSimilarityHits(ctx context.Context, bulk ...postg
 	return r.dbQuery.BulkInsertSimilarityHits(ctx, bulk)
 }
 
-func (r *Repository) DeleteSimilarityHit(ctx context.Context, correctionID string) error {
-	return r.dbQuery.DeleteSimilarityHit(ctx, correctionID)
+func (r *Repository) DeleteSimilarityHit(ctx context.Context, correlationID string) error {
+	return r.dbQuery.DeleteSimilarityHit(ctx, correlationID)
 }
 
-func (r *Repository) DeleteArb(ctx context.Context, correctionID string) error {
-	return r.dbQuery.DeleteArb(ctx, correctionID)
+func (r *Repository) DeleteArb(ctx context.Context, correlationID string) error {
+	return r.dbQuery.DeleteArb(ctx, correlationID)
 }
 
-func (r *Repository) UpdateArbConfirm(ctx context.Context, param postgres.UpdateArbConfirmParams) error {
-	return r.dbQuery.UpdateArbConfirm(ctx, param)
+func (r *Repository) UpdateArbConfirmedToTrue(ctx context.Context, correlationID string) error {
+	return r.dbQuery.UpdateArbConfirm(ctx, postgres.UpdateArbConfirmParams{
+		CorrelationID: correlationID,
+		Confirmed:     true,
+	})
 }
 
-func (r *Repository) UpdateArbRunning(ctx context.Context, param postgres.UpdateArbRunningParams) error {
-	return r.dbQuery.UpdateArbRunning(ctx, param)
+func (r *Repository) UpdateArbRunning(ctx context.Context, correlationID string) error {
+	return r.dbQuery.UpdateArbRunning(ctx, postgres.UpdateArbRunningParams{
+		CorrelationID: correlationID,
+		Running:       true,
+	})
+}
+
+func (r *Repository) UpdateArbStatus(ctx context.Context, correlationID string) (postgres.Arb, error) {
+	return r.dbQuery.UpdateArbStatus(ctx, postgres.UpdateArbStatusParams{
+		CorrelationID: correlationID,
+		Confirmed:     true,
+		Running:       true,
+	})
 }

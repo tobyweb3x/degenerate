@@ -22,13 +22,15 @@ type TemplateModel[T any] struct {
 	CorrelationId string
 	ArbFoundAt    time.Time
 	Payload       T
+	Running       bool
+	Confirmed     bool
 }
 
 func ToCrossPlatformHits(
 	param ...postgres.SimilarityHit,
-) ([]TemplateModel[protos.Ebo_CrossPlatformHit], error) {
+) ([]TemplateModel[protos.ClientEbo_CrossPlatformHit], error) {
 
-	r := make([]TemplateModel[protos.Ebo_CrossPlatformHit], 0, len(param))
+	r := make([]TemplateModel[protos.ClientEbo_CrossPlatformHit], 0, len(param))
 
 	for _, v := range param {
 		var hit protos.SimilarityHit
@@ -41,10 +43,10 @@ func ToCrossPlatformHits(
 			return nil, err
 		}
 
-		r = append(r, TemplateModel[protos.Ebo_CrossPlatformHit]{
+		r = append(r, TemplateModel[protos.ClientEbo_CrossPlatformHit]{
 			CorrelationId: v.CorrelationID,
 			ArbFoundAt:    v.FoundAt.Time,
-			Payload:       protos.Ebo_CrossPlatformHit{CrossPlatformHit: &hit},
+			Payload:       protos.ClientEbo_CrossPlatformHit{CrossPlatformHit: &hit},
 		})
 	}
 
@@ -53,9 +55,9 @@ func ToCrossPlatformHits(
 
 func ToCrossPlatformArbs(
 	param ...postgres.Arb,
-) ([]TemplateModel[protos.Ebo_CrossPlatformArb], error) {
+) ([]TemplateModel[protos.ClientEbo_CrossPlatformArb], error) {
 
-	r := make([]TemplateModel[protos.Ebo_CrossPlatformArb], 0, len(param))
+	r := make([]TemplateModel[protos.ClientEbo_CrossPlatformArb], 0, len(param))
 
 	for _, v := range param {
 		var arb protos.Arb
@@ -68,12 +70,24 @@ func ToCrossPlatformArbs(
 			return nil, err
 		}
 
-		r = append(r, TemplateModel[protos.Ebo_CrossPlatformArb]{
+		r = append(r, TemplateModel[protos.ClientEbo_CrossPlatformArb]{
 			CorrelationId: v.CorrelationID,
 			ArbFoundAt:    v.FoundAt.Time,
-			Payload:       protos.Ebo_CrossPlatformArb{CrossPlatformArb: &arb},
+			Payload:       protos.ClientEbo_CrossPlatformArb{CrossPlatformArb: &arb},
+			Running:       v.Running,
+			Confirmed:     v.Confirmed,
 		})
 	}
 
 	return r, nil
+}
+
+type PlatformAchorCount struct {
+	KalshiCount     int
+	PolymarketCount int
+}
+
+type ArbStatusCount struct {
+	Confirmed int
+	Running   int
 }

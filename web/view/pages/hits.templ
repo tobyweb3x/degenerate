@@ -8,11 +8,11 @@ import (
 	"web/protos"
 )
 
-templ SimilarityHitsPage(param []TemplateModel[protos.Ebo_CrossPlatformHit]) {
-	@document(SimilarityHitPartial(param), nil)
+templ SimilarityHitsPage(param []TemplateModel[protos.ClientEbo_CrossPlatformHit], counts PlatformAchorCount) {
+	@document(SimilarityHitPartial(param, counts), nil)
 }
 
-templ SimilarityHitPartial(param []TemplateModel[protos.Ebo_CrossPlatformHit]) {
+templ SimilarityHitPartial(param []TemplateModel[protos.ClientEbo_CrossPlatformHit], counts PlatformAchorCount) {
 	<div class="mx-3 h-full flex flex-col" id="needsResolve">
 		<div class="flex gap-3 py-4 justify-center items-center w-fit">
 			<p class="text-2xl font-archivoSemiBold text-left">Similarity Hits</p>
@@ -32,47 +32,53 @@ templ SimilarityHitPartial(param []TemplateModel[protos.Ebo_CrossPlatformHit]) {
 				</button>
 				<button
 					onclick="filterPlatform('POLYMARKET', this)"
-					class="platform-filter px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition"
+					class="platform-filter flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition"
 				>
-					Polymarket
+					<span>Polymarket</span>
+					<span class="text-xs font-dmSans rounded-full bg-black px-1.5 py-0.5">
+						{ p.Sprintf("%d", counts.PolymarketCount) }
+					</span>
 				</button>
 				<button
 					onclick="filterPlatform('KALSHI', this)"
-					class="platform-filter px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition"
+					class="platform-filter flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition"
 				>
-					Kalshi
+					<span>Kalshi</span>
+					<span class="text-xs font-dmSans rounded-full bg-black px-1.5 py-0.5">
+						{ p.Sprintf("%d", counts.KalshiCount) }
+					</span>
 				</button>
 			</div>
 			<section class="ml-2.5 overflow-y-auto min-h-0">
 				<ul class="space-y-3">
-					for i, v := range param {
-						if v.Payload.CrossPlatformHit == nil {
+					for i, hit := range param {
+						if hit.Payload.CrossPlatformHit == nil {
 							continue
 						}
 						<li
 							class="border-4 border-white/30 rounded-2xl px-2.5 py-2.5 text-md transition-colors duration-150 hover:bg-white/5 cursor-pointer listings"
-							data-platform={ v.Payload.CrossPlatformHit.Anchor.Platform.String() }
+							data-platform={ hit.Payload.CrossPlatformHit.Anchor.Platform.String() }
 						>
-							<a hx-get={ templ.SafeURL(fmt.Sprintf("/resolve/hit/%s", v.CorrelationId)) } hx-trigger="click" hx-target="#needsResolve" hx-swap="outerHTML" hx-push-url="true">
+							<a hx-get={ templ.SafeURL(fmt.Sprintf("/resolve/hit/%s", hit.CorrelationId)) } hx-trigger="click" hx-target="#needsResolve" hx-swap="outerHTML" hx-push-url="true">
 								<div class="flex justify-between w-full">
-									<p><span class="font-archivo text-sm">Question:</span> { v.Payload.CrossPlatformHit.Anchor.Question }</p>
+									<p><span class="font-archivo text-sm">Question:</span> { hit.Payload.CrossPlatformHit.Anchor.Question }</p>
 									<p class="font-extrabold text-xs">{ i+1 }</p>
 								</div>
-								<p><span class="font-archivo text-sm">Outcomes: </span> { v.Payload.CrossPlatformHit.Anchor.Outcome }</p>
+								<p><span class="font-archivo text-sm">Outcomes: </span> { hit.Payload.CrossPlatformHit.Anchor.Outcome }</p>
 								<div class="flex gap-8 mt-2.5">
-									<p class="text-xs font-archivo">foundAt: <span class=" text-sm font-archivoSemiBold">{ friendlyTime(v.ArbFoundAt) } </span></p>
-									<p class="text-xs font-archivo">platform: <span class=" text-sm font-archivoSemiBold">{ cases.Title(language.English).String(v.Payload.CrossPlatformHit.Anchor.Platform.String()) }</span></p>
+									<p class="text-xs font-archivo">foundAt: <span class=" text-sm font-archivoSemiBold">{ friendlyTime(hit.ArbFoundAt) } </span></p>
+									<p class="text-xs font-archivo">platform: <span class=" text-sm font-archivoSemiBold">{ cases.Title(language.English).String(hit.Payload.CrossPlatformHit.Anchor.Platform.String()) }</span></p>
 								</div>
 								<section class="flex justify-between items-center">
 									<ul class="flex  gap-4 pt-2.5 items-baseline">
 										Matches: 
-										for i, j := range v.Payload.CrossPlatformHit.Matches {
+										for i, j := range hit.Payload.CrossPlatformHit.Matches {
 											<li class="text-xs"><span class="rounded-full bg-[#FFFFFF4D] px-2 cursor-pointer" title="$$$$$$$$">{ i+1 }</span> { fmt.Sprintf("%.2f%%", j.Scored * 100) }</li>
 										}
 									</ul>
 									<button
 										type="button"
-										hx-post={ templ.SafeURL(fmt.Sprintf("/delete/hit/%s", v.CorrelationId)) }
+										hx-post={ templ.SafeURL(fmt.Sprintf("/delete/hit/%s", hit.CorrelationId)) }
 										hx-target="#needsResolve"
 										hx-swap="outerHTML"
 										hx-confirm="Are you sure you want to delete this hit?"
@@ -98,7 +104,7 @@ templ SimilarityHitPartial(param []TemplateModel[protos.Ebo_CrossPlatformHit]) {
 		}
 		<style>
 			.loading {
-				filter: blur(2px);
+				filter: blur(5px);
 				pointer-events: none;
 			}
 		</style>
@@ -144,11 +150,11 @@ templ SimilarityHitPartial(param []TemplateModel[protos.Ebo_CrossPlatformHit]) {
 	</div>
 }
 
-templ ResolvePage(param TemplateModel[protos.Ebo_CrossPlatformHit]) {
-	@document(ResolvePartial(param), nil)
+templ ResolveHitPage(param TemplateModel[protos.ClientEbo_CrossPlatformHit]) {
+	@document(ResolveHitPartial(param), nil)
 }
 
-templ ResolvePartial(param TemplateModel[protos.Ebo_CrossPlatformHit]) {
+templ ResolveHitPartial(param TemplateModel[protos.ClientEbo_CrossPlatformHit]) {
 	<div id="resolve" class="grid grid-cols-[1fr_auto] h-full gap-2.5">
 		<section id="listings" class="h-full flex flex-col overflow-hidden">
 			<div class="shrink-0">
@@ -168,12 +174,12 @@ templ ResolvePartial(param TemplateModel[protos.Ebo_CrossPlatformHit]) {
 						<p class="font-archivoSemiBold font-extralight text-xl">Anchor:</p>
 						<button
 							type="button"
-							hx-post={ templ.SafeURL(fmt.Sprintf("/delete/%s", param.CorrelationId)) }
+							hx-post={ templ.SafeURL(fmt.Sprintf("/delete/hit/%s", param.CorrelationId)) }
 							hx-target="#resolve"
 							hx-swap="outerHTML"
 							hx-confirm="Are you sure you want to delete this hit?"
-							hx-trigger="click consume"
-							hx-push-url="/resolve"
+							hx-trigger="click"
+							hx-push-url="/hits"
 							class="w-fit 
 								transition-all duration-150
 								hover:bg-red-500/20
@@ -184,16 +190,18 @@ templ ResolvePartial(param TemplateModel[protos.Ebo_CrossPlatformHit]) {
 							<img src="/assets/svg/delete-red.svg" alt="" class="w-6 aspect-square"/>
 						</button>
 					</div>
-					{{ anchorOutcomes := ParseOutcomes(param.Payload.CrossPlatformHit.Anchor.Outcome) }}
+					{{ anchor := param.Payload.CrossPlatformHit.Anchor }}
+					{{ anchorOutcomes := ParseOutcomes(anchor.Outcome) }}
 					<div class="border-2 border-[#FFFFFF4D] rounded-2xl p-2.5 mt-2.5 text-md">
-						<p><span class="font-archivo text-sm">Question:</span> { param.Payload.CrossPlatformHit.Anchor.Question }</p>
-						<p><span class="font-archivo text-sm">Outcomes: </span> { param.Payload.CrossPlatformHit.Anchor.Outcome }</p>
+						<p><span class="font-archivo text-sm">Question:</span> { anchor.Question }</p>
+						<p><span class="font-archivo text-sm">Outcomes: </span> { anchor.Outcome }</p>
 						<div class="flex gap-8 mt-2.5">
-							<p class="text-xs font-dmSans">EndDate: <span class=" text-sm font-archivoSemiBold">{ param.Payload.CrossPlatformHit.Anchor.EndDate } </span></p>
-							<p class="text-xs font-archivo">platform: <span class=" text-sm font-archivoSemiBold">{ cases.Title(language.English).String(param.Payload.CrossPlatformHit.Anchor.Platform.String() ) }</span></p>
+							<p class="text-xs font-dmSans">EndDate: <span class=" text-sm font-archivoSemiBold">{ friendlyTimeFromString(anchor.EndDate ) } </span></p>
+							<p class="text-xs font-archivo">platform: <span class=" text-sm font-archivoSemiBold">{ cases.Title(language.English).String(anchor.Platform.String() ) }</span></p>
+							<p class="text-xs font-archivo">market: <span class="text-sm font-archivoSemiBold">{ fmt.Sprintf("%s/%s", cases.Title(language.English).String(anchor.MarketCategory), anchor.MarketSubcategory) }</span></p>
 						</div>
 						<p class="font-extrabold font-archivoSemiBold text-sm mt-3">Rules:</p>
-						<p class="font-dmSans text-sm">{ param.Payload.CrossPlatformHit.Anchor.Rules }</p>
+						<p class="font-dmSans text-sm">{ anchor.Rules }</p>
 					</div>
 				</div>
 			</div>
@@ -201,24 +209,25 @@ templ ResolvePartial(param TemplateModel[protos.Ebo_CrossPlatformHit]) {
 				<p class="font-archivo font-extralight text-lg">Matches <span>({ len( param.Payload.CrossPlatformHit.Matches) })</span>:</p>
 				<div class="overflow-y-auto h-full">
 					<ul class="space-y-2.5 mt-2.5 pb-5">
-						for i, v := range param.Payload.CrossPlatformHit.Matches {
-							{{ matchOutcomes := ParseOutcomes(v.MarketInfo.Outcome) }}
-							<li class="border-2 border-[#FFFFFF4D] rounded-2xl px-2.5 py-2.5 text-md transition-all duration-300" id={ fmt.Sprintf("match-row-%s", v.MarketInfo.Uuid) }>
+						for i, match := range param.Payload.CrossPlatformHit.Matches {
+							{{ matchOutcomes := ParseOutcomes(match.MarketInfo.Outcome) }}
+							<li class="border-2 border-[#FFFFFF4D] rounded-2xl px-2.5 py-2.5 text-md transition-all duration-300" id={ fmt.Sprintf("match-row-%s", match.MarketInfo.Uuid) }>
 								<div class="flex flex-row justify-between">
 									<div>
-										<p class="text-sm font-dmSans font-bold"><span class="font-archivo text-sm">Question:</span> { v.MarketInfo.Question }</p>
-										<p class="text-sm font-dmSans font-bold"><span class="font-archivo text-sm">Outcomes: </span> { v.MarketInfo.Outcome }</p>
-										<p><span class="font-archivo text-sm">Match: </span> { fmt.Sprintf("%.2f%%", v.Scored * 100) }</p>
+										<p class="text-sm font-dmSans font-bold"><span class="font-archivo text-sm">Question:</span> { match.MarketInfo.Question }</p>
+										<p class="text-sm font-dmSans font-bold"><span class="font-archivo text-sm">Outcomes: </span> { match.MarketInfo.Outcome }</p>
+										<p><span class="font-archivo text-sm">Match: </span> { fmt.Sprintf("%.2f%%", match.Scored * 100) }</p>
 										<div class="flex gap-8 mt-2.5">
-											<p class="text-xs font-dmSans">EndDate: <span class="text-sm font-archivoSemiBold">{ v.MarketInfo.EndDate } </span></p>
-											<p class="text-xs font-archivo">platform: <span class="text-sm font-archivoSemiBold">{ cases.Title(language.English).String(v.MarketInfo.Platform.String()) }</span></p>
+											<p class="text-xs font-dmSans">EndDate: <span class="text-sm font-archivoSemiBold">{ friendlyTimeFromString(match.MarketInfo.EndDate) } </span></p>
+											<p class="text-xs font-archivo">platform: <span class="text-sm font-archivoSemiBold">{ cases.Title(language.English).String(match.MarketInfo.Platform.String()) }</span></p>
+											<p class="text-xs font-archivo">market: <span class="text-sm font-archivoSemiBold">{ fmt.Sprintf("%s/%s", cases.Title(language.English).String(match.MarketInfo.MarketCategory), match.MarketInfo.MarketSubcategory) }</span></p>
 										</div>
 									</div>
 									<section class="pr-2 flex flex-col items-end gap-2">
 										<p class="font-extrabold text-xs text-right">#{ fmt.Sprintf("%d", i+1) }</p>
 										<div class="pr-7 flex flex-col h-fit items-center gap-3.5">
 											<select
-												id={ fmt.Sprintf("select-%s", v.MarketInfo.Uuid) }
+												id={ fmt.Sprintf("select-%s", match.MarketInfo.Uuid) }
 												class="bg-black border border-gray-600 rounded p-1 text-xs mt-2 outline-green-600 cursor-pointer"
 												_="on change 
 													if my value is not empty 
@@ -236,7 +245,7 @@ templ ResolvePartial(param TemplateModel[protos.Ebo_CrossPlatformHit]) {
 												<option value="">select leg</option>
 												<optgroup label={ fmt.Sprintf("Anchor: %s", GetOutcomeByIndex(anchorOutcomes, 0)) }>
 													<option
-														value={ fmt.Sprintf("%s|0|0", v.MarketInfo.Uuid) }
+														value={ fmt.Sprintf("%s|0|0", match.MarketInfo.Uuid) }
 														data-anum={ fmt.Sprintf("%d", i+1) }
 														data-aname={ GetOutcomeByIndex(anchorOutcomes, 0) }
 														data-mname={ GetOutcomeByIndex(matchOutcomes, 0) }
@@ -244,7 +253,7 @@ templ ResolvePartial(param TemplateModel[protos.Ebo_CrossPlatformHit]) {
 														Match Leg 0
 													</option>
 													<option
-														value={ fmt.Sprintf("%s|0|1", v.MarketInfo.Uuid) }
+														value={ fmt.Sprintf("%s|0|1", match.MarketInfo.Uuid) }
 														data-anum={ fmt.Sprintf("%d", i+1) }
 														data-aname={ GetOutcomeByIndex(anchorOutcomes, 0) }
 														data-mname={ GetOutcomeByIndex(matchOutcomes, 1) }
@@ -255,7 +264,7 @@ templ ResolvePartial(param TemplateModel[protos.Ebo_CrossPlatformHit]) {
 												<!-- ANCHOR LEG 1 -->
 												<optgroup label={ fmt.Sprintf("Anchor: %s", GetOutcomeByIndex(anchorOutcomes, 1)) }>
 													<option
-														value={ fmt.Sprintf("%s|1|0", v.MarketInfo.Uuid) }
+														value={ fmt.Sprintf("%s|1|0", match.MarketInfo.Uuid) }
 														data-anum={ fmt.Sprintf("%d", i+1) }
 														data-aname={ GetOutcomeByIndex(anchorOutcomes, 1) }
 														data-mname={ GetOutcomeByIndex(matchOutcomes, 0) }
@@ -263,7 +272,7 @@ templ ResolvePartial(param TemplateModel[protos.Ebo_CrossPlatformHit]) {
 														Match Leg 0
 													</option>
 													<option
-														value={ fmt.Sprintf("%s|1|1", v.MarketInfo.Uuid) }
+														value={ fmt.Sprintf("%s|1|1", match.MarketInfo.Uuid) }
 														data-anum={ fmt.Sprintf("%d", i+1) }
 														data-aname={ GetOutcomeByIndex(anchorOutcomes, 1) }
 														data-mname={ GetOutcomeByIndex(matchOutcomes, 1) }
@@ -276,8 +285,8 @@ templ ResolvePartial(param TemplateModel[protos.Ebo_CrossPlatformHit]) {
 												type="button"
 												disabled
 												class="bg-purple-800 hover:bg-purple-500 text-white text-xs px-3 py-1 rounded transition-colors add-btn opacity-50 cursor-not-allowed"
-												data-uuid={ v.MarketInfo.Uuid }
-												data-question={ v.MarketInfo.Question }
+												data-uuid={ match.MarketInfo.Uuid }
+												data-question={ match.MarketInfo.Question }
 												onclick="addToPick(this)"
 											>
 												Add to Picks
@@ -289,7 +298,7 @@ templ ResolvePartial(param TemplateModel[protos.Ebo_CrossPlatformHit]) {
 									</section>
 								</div>
 								<p class="font-extrabold font-archivoSemiBold text-sm mt-3">Rules:</p>
-								<p class="font-dmSans text-sm">{ v.MarketInfo.Rules }</p>
+								<p class="font-dmSans text-sm">{ match.MarketInfo.Rules }</p>
 							</li>
 						}
 					</ul>

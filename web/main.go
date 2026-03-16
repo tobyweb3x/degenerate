@@ -41,7 +41,10 @@ func main() {
 	defer conn.Close()
 
 	// app
-	app := backend.NewApp(conn)
+	app, err := backend.NewApp(conn, &environmentalVariables)
+	if err != nil {
+		log.Fatalf("unable to create app: %s\n", err.Error())
+	}
 
 	// grpc
 	grpcListener, err := net.Listen("tcp", ":"+environmentalVariables.GrpcPort)

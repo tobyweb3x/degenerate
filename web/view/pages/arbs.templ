@@ -8,11 +8,11 @@ import (
 	"web/protos"
 )
 
-templ ArbsPage(param []TemplateModel[protos.Ebo_CrossPlatformArb]) {
-	@document(ArbsPartial(param), nil)
+templ ArbsPage(param []TemplateModel[protos.ClientEbo_CrossPlatformArb], platformCount PlatformAchorCount, statusCount ArbStatusCount) {
+	@document(ArbsPartial(param, platformCount, statusCount), nil)
 }
 
-templ ArbsPartial(param []TemplateModel[protos.Ebo_CrossPlatformArb]) {
+templ ArbsPartial(param []TemplateModel[protos.ClientEbo_CrossPlatformArb], platformCount PlatformAchorCount, statusCount ArbStatusCount) {
 	<div class="mx-3 h-full flex flex-col" id="needsResolve">
 		<div class="flex gap-3 py-4 justify-center items-center w-fit">
 			<p class="text-2xl font-archivoSemiBold text-left">Arbs</p>
@@ -32,52 +32,86 @@ templ ArbsPartial(param []TemplateModel[protos.Ebo_CrossPlatformArb]) {
 				</button>
 				<button
 					onclick="filterPlatform('POLYMARKET', this)"
-					class="platform-filter px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition"
+					class="platform-filter flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition"
 				>
-					Polymarket
+					<span>Polymarket</span>
+					<span class="text-xs font-dmSans rounded-full bg-black px-1.5 py-0.5">
+						{ p.Sprintf("%d", platformCount.PolymarketCount) }
+					</span>
 				</button>
 				<button
 					onclick="filterPlatform('KALSHI', this)"
-					class="platform-filter px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition"
+					class="platform-filter flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition"
 				>
-					Kalshi
+					<span>Kalshi</span>
+					<span class="text-xs font-dmSans rounded-full bg-black px-1.5 py-0.5">
+						{ p.Sprintf("%d", platformCount.KalshiCount) }
+					</span>
+				</button>
+				<button
+					onclick="filterStatus('CONFIRMED', this)"
+					class="platform-filter flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition"
+				>
+					<span>Confirmed</span>
+					<span class="text-xs font-dmSans rounded-full bg-black px-1.5 py-0.5">
+						{ p.Sprintf("%d", statusCount.Confirmed) }
+					</span>
+				</button>
+				<button
+					onclick="filterStatus('RUNNING', this)"
+					class="platform-filter flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition"
+				>
+					<span>Running</span>
+					<span class="text-xs font-dmSans rounded-full bg-black px-1.5 py-0.5">
+						{ p.Sprintf("%d", statusCount.Running) }
+					</span>
 				</button>
 			</div>
 			<section class="ml-2.5 overflow-y-auto min-h-0">
 				<ul class="space-y-3">
-					for i, v := range param {
-						if v.Payload.CrossPlatformArb == nil {
+					for i, arb := range param {
+						if arb.Payload.CrossPlatformArb == nil {
 							continue
 						}
+						{{ anchor := arb.Payload.CrossPlatformArb.Anchor.Discovery }}
+						{{ match := arb.Payload.CrossPlatformArb.Match.Discovery }}
 						<li
 							class="border-4 border-white/30 rounded-2xl px-2.5 py-2.5 text-md transition-colors duration-150 hover:bg-white/5 cursor-pointer listings"
-							data-platform={ v.Payload.CrossPlatformArb.Anchor.Discovery.MarketInfo.Platform.String() }
+							data-platform={ anchor.MarketInfo.Platform.String() }
+							data-confirmed={ arb.Confirmed }
+							data-running={ arb.Running }
 						>
-							<a hx-get={ templ.SafeURL(fmt.Sprintf("/resolve/arb/%s", v.CorrelationId)) } hx-trigger="click" hx-target="#needsResolve" hx-swap="outerHTML" hx-push-url="true">
+							<a hx-get={ templ.SafeURL(fmt.Sprintf("/resolve/arb/%s", arb.CorrelationId)) } hx-trigger="click" hx-target="#needsResolve" hx-swap="outerHTML" hx-push-url="true">
 								<div class="flex justify-between w-full">
-									<p><span class="font-archivo text-sm">Question:</span> { v.Payload.CrossPlatformArb.Anchor.Discovery.MarketInfo.Question }</p>
+									<p><span class="font-archivo text-sm">Question:</span> { anchor.MarketInfo.Question }</p>
 									<p class="font-extrabold text-xs">{ i+1 }</p>
 								</div>
 								<div>
-									<p><span class="font-archivo text-sm">Picks (<span class="text-xs">{ fmt.Sprintf("anchor-%d ", v.Payload.CrossPlatformArb.Anchor.Discovery.Leg) }</span>): </span> <span class="font-archivoSemiBold">{ v.Payload.CrossPlatformArb.Anchor.Discovery.LegStr }</span></p>
-									<p><span class="font-archivo text-sm">Picks (<span class="text-xs">{ fmt.Sprintf("match-%d ", v.Payload.CrossPlatformArb.Match.Discovery.Leg) }</span>): </span> <span class="font-archivoSemiBold">{ v.Payload.CrossPlatformArb.Match.Discovery.LegStr }</span></p>
+									<p><span class="font-archivo text-sm">Picks (<span class="text-xs">{ fmt.Sprintf("anchor--> %d ", anchor.Leg) }</span>): </span> <span class="font-archivoSemiBold">{ anchor.LegStr }</span></p>
+									<p><span class="font-archivo text-sm">Picks (<span class="text-xs">{ fmt.Sprintf("match--> %d ", match.Leg) }</span>): </span> <span class="font-archivoSemiBold">{ match.LegStr }</span></p>
 								</div>
-								<div class="flex gap-8 mt-2.5">
-									<p class="text-xs font-archivo">foundAt: <span class=" text-sm font-archivoSemiBold">{ friendlyTime(v.ArbFoundAt) } </span></p>
+								<div class="flex gap-8 mt-2.5 items-center">
+									<p class="text-xs font-archivo">foundAt: <span class=" text-sm font-archivoSemiBold">{ friendlyTime(arb.ArbFoundAt) } </span></p>
 									<p class="text-xs font-archivo">
 										platforms: 
 										<span class="text-sm font-archivoSemiBold">
 											{ fmt.Sprintf("%s/%s", 
-                                    cases.Title(language.English).String(v.Payload.CrossPlatformArb.Anchor.Discovery.MarketInfo.Platform.String()),  cases.Title(language.English).String(v.Payload.CrossPlatformArb.Match.Discovery.MarketInfo.Platform.String()) ) }
+                                    cases.Title(language.English).String(anchor.MarketInfo.Platform.String()),  cases.Title(language.English).String(match.MarketInfo.Platform.String()) ) }
 										</span>
 									</p>
-									<p class="text-xs font-archivo">Scored: <span class=" text-sm font-archivoSemiBold">{ fmt.Sprintf("%.2f%%", v.Payload.CrossPlatformArb.Scored   * 100) } </span></p>
+									<p class="text-xs font-archivo">Scored: <span class=" text-sm font-archivoSemiBold">{ fmt.Sprintf("%.2f%%", arb.Payload.CrossPlatformArb.Scored   * 100) } </span></p>
+									if arb.Confirmed {
+										<p class="text-xs font-archivo">Confirmed: ✅</p>
+									}
+									if arb.Running {
+										<p class="text-xs font-archivo">Running: ✅</p>
+									}
 									<button
 										type="button"
-										hx-post={ templ.SafeURL(fmt.Sprintf("/delete/arb/%s", v.CorrelationId)) }
+										hx-post={ templ.SafeURL(fmt.Sprintf("/delete/arb/%s", arb.CorrelationId)) }
 										hx-target="#needsResolve"
 										hx-swap="outerHTML"
-										hx-confirm="Are you sure you want to delete this hit?"
+										hx-confirm="Are you sure you want to delete this arb?"
 										hx-trigger="click consume"
 										hx-push-url="false"
 										class="ml-auto transition-all duration-150 hover:bg-red-500/20 hover:ring-1 hover:ring-red-400 rounded-full cursor-pointer"
@@ -137,6 +171,236 @@ templ ArbsPartial(param []TemplateModel[protos.Ebo_CrossPlatformArb]) {
 
 			}, 0)
 		}
+
+		function filterStatus(status, btn) {
+
+		const container = document.querySelector("#needsResolve > section")
+		container.classList.add("loading")
+
+		setTimeout(() => {
+
+			document.querySelectorAll(".platform-filter").forEach(b => {
+			b.classList.remove(
+				"bg-emerald-500/20",
+				"ring-1",
+				"ring-emerald-400",
+				"shadow-[0_0_8px_rgba(16,185,129,0.6)]"
+			)
+			})
+
+			btn.classList.add(
+			"bg-emerald-500/20",
+			"ring-1",
+			"ring-emerald-400",
+			"shadow-[0_0_8px_rgba(16,185,129,0.6)]"
+			)
+
+			const items = document.querySelectorAll(".listings")
+
+			items.forEach(item => {
+			const confirmed = item.dataset.confirmed === "true"
+			const running = item.dataset.running === "true"
+
+			if (
+				status === "ALL" ||
+				(status === "CONFIRMED" && confirmed) ||
+				(status === "RUNNING" && running)
+			) {
+				item.classList.remove("hidden")
+			} else {
+				item.classList.add("hidden")
+			}
+			})
+
+			container.classList.remove("loading")
+
+		}, 0)
+		}
 		</script>
 	</div>
+}
+
+templ ResolveArbPage(param TemplateModel[protos.ClientEbo_CrossPlatformArb]) {
+	@document(ResolveArbPartial(param), nil)
+}
+
+templ ResolveArbPartial(param TemplateModel[protos.ClientEbo_CrossPlatformArb]) {
+	<div id="resolve" class="grid grid-cols-2 gap-3 h-full">
+		<section id="listings" class="h-fit flex flex-col">
+			<div class="flex gap-1 justify-center items-center w-fit mr-auto">
+				<a hx-get={ templ.SafeURL("/arbs") } hx-target="#resolve" hx-swap="outerHTML" hx-push-url="true">
+					<img
+						src="/assets/svg/ArrowLeft.svg"
+						alt=""
+						class="w-6 aspect-square cursor-pointer"
+					/>
+				</a>
+				<p class=" text-lg font-archivoSemiBold font-bold tracking-[0.001em] text-left">Back</p>
+			</div>
+			<div class="flex w-full justify-between items-center">
+				<p class="mt-6 font-dmSans font-extralight text-sm">Resolve for: <span class="font-bold font-archivoSemiBold text-base">{ shortenID(param.CorrelationId) }</span></p>
+				<button
+					type="button"
+					hx-post={ templ.SafeURL(fmt.Sprintf("/delete/arb/%s", param.CorrelationId)) }
+					hx-target="#resolve"
+					hx-swap="outerHTML"
+					hx-confirm="Are you sure you want to delete this arb?"
+					hx-trigger="click"
+					hx-push-url="/arbs"
+					class="w-fit h-fit transition-all duration-150 hover:bg-red-500/20 hover:ring-1 hover:ring-red-400 rounded-full cursor-pointer"
+				>
+					<img src="/assets/svg/delete-red.svg" alt="" class="w-6 aspect-square"/>
+				</button>
+			</div>
+			{{ anchor := param.Payload.CrossPlatformArb.Anchor.Discovery }}
+			{{ match := param.Payload.CrossPlatformArb.Match.Discovery }}
+			<div class="mt-2">
+				<div class="flex w-full justify-between item">
+					<p class="font-archivoSemiBold font-extralight text-xl">Anchor:</p>
+					<p class="font-bold">Pick: <span class="font-dmSans text-xs font-extralight">{ anchor.LegStr }</span></p>
+				</div>
+				<div class="border-2 border-[#FFFFFF4D] rounded-2xl p-2.5 mt-2.5 text-md">
+					<p><span class="font-archivo text-sm">Question:</span> { anchor.MarketInfo.Question }</p>
+					<p><span class="font-archivo text-sm">Outcomes: </span> { anchor.MarketInfo.Outcome }</p>
+					<div class="flex gap-8 mt-2.5">
+						<p class="text-xs font-dmSans">EndDate: <span class=" text-sm font-archivoSemiBold">{ friendlyTimeFromString(anchor.MarketInfo.EndDate) } </span></p>
+						<p class="text-xs font-archivo">platform: <span class=" text-sm font-archivoSemiBold">{ cases.Title(language.English).String(anchor.MarketInfo.Platform.String() ) }</span></p>
+						<p class="text-xs font-archivo">market: <span class="text-sm font-archivoSemiBold">{ fmt.Sprintf("%s/%s", cases.Title(language.English).String(match.MarketInfo.MarketCategory), match.MarketInfo.MarketSubcategory) }</span></p>
+					</div>
+					<p class="font-extrabold font-archivoSemiBold text-sm mt-3">Rules:</p>
+					<p class="font-dmSans text-sm">{ anchor.MarketInfo.Rules }</p>
+				</div>
+			</div>
+			<div class="mt-4">
+				<div class="flex w-full justify-between item">
+					<p class="font-archivoSemiBold font-extralight text-xl">Match:</p>
+					<p class="font-bold">Pick: <span class="font-dmSans text-xs font-extralight">{ match.LegStr }</span></p>
+				</div>
+				<div class="h-fit mt-2.5 pb-5 border-2 border-[#FFFFFF4D] rounded-2xl px-2.5 py-2.5 text-md transition-all duration-300" id={ fmt.Sprintf("match-row-%s", match.MarketInfo.Uuid) }>
+					<div class="flex flex-row justify-between">
+						<div>
+							<p class="text-sm font-dmSans font-bold"><span class="font-archivo text-sm">Question:</span> { match.MarketInfo.Question }</p>
+							<p class="text-sm font-dmSans font-bold"><span class="font-archivo text-sm">Outcomes: </span> { match.MarketInfo.Outcome }</p>
+							<p><span class="font-archivo text-sm">Match: </span> { fmt.Sprintf("%.2f%%", param.Payload.CrossPlatformArb.Scored * 100) }</p>
+							<div class="flex gap-8 mt-2.5">
+								<p class="text-xs font-dmSans">EndDate: <span class="text-sm font-archivoSemiBold">{ friendlyTimeFromString( match.MarketInfo.EndDate) } </span></p>
+								<p class="text-xs font-archivo">platform: <span class="text-sm font-archivoSemiBold">{ cases.Title(language.English).String(match.MarketInfo.Platform.String()) }</span></p>
+								<p class="text-xs font-archivo">market: <span class="text-sm font-archivoSemiBold">{ fmt.Sprintf("%s/%s", cases.Title(language.English).String(match.MarketInfo.MarketCategory), match.MarketInfo.MarketSubcategory) }</span></p>
+							</div>
+						</div>
+					</div>
+					<p class="font-extrabold font-archivoSemiBold text-sm mt-3">Rules:</p>
+					<p class="font-dmSans text-sm">{ match.MarketInfo.Rules }</p>
+				</div>
+			</div>
+			if !param.Running {
+				<div class="mt-2.5 space-x-2.5 pl-2">
+					if !param.Confirmed {
+						<button
+							type="button"
+							hx-post={ templ.SafeURL(fmt.Sprintf("/resolve/arb/submit/confirm/%s", param.CorrelationId)) }
+							hx-target="#resolve"
+							hx-swap="outerHTML"
+							hx-confirm="Are you sure you've confirmed this arb?"
+							hx-trigger="click"
+							hx-push-url="/arbs"
+							class="bg-green-700 py-2.5 px-5 rounded-2xl text-white text-center cursor-pointer transition-all duration-150 hover:bg-green-500/20 hover:ring-1 hover:ring-green-600"
+						>
+							Confirm
+						</button>
+					}
+					<button
+						type="button"
+						hx-post={ templ.SafeURL(fmt.Sprintf("/resolve/arb/submit/confirm&run/%s", param.CorrelationId)) }
+						hx-target="#resolve"
+						hx-swap="outerHTML"
+						hx-confirm="Are you sure you've confirmed and wanna run this arb?"
+						hx-trigger="click"
+						hx-push-url="/arbs"
+						class="bg-green-700 py-2.5 px-5 rounded-2xl text-white text-center cursor-pointer transition-all duration-150 hover:bg-green-500/20 hover:ring-1 hover:ring-green-600"
+					>
+						Confirm & Run
+					</button>
+				</div>
+			}
+		</section>
+		<section id="info" class="border-2 border-[#FFFFFF4D] rounded-2xl grid grid-cols-2 gap-2.5 py-2 px-3 h-full min-h-0">
+			<!-- Anchor -->
+			<div class="anchor-market flex flex-col h-full min-h-0 relative">
+				<div class="flex justify-between items-start py-1.5 shrink-0">
+					<div>
+						<button
+							type="button"
+							hx-get={ templ.SafeURL(fmt.Sprintf("/market/json/%s/%s", anchor.MarketInfo.Platform.String(), anchor.MarketInfo.MarketId)) }
+							hx-target="#anchor-json"
+							hx-swap="innerHTML"
+							hx-indicator="#anchor-spinner"
+							class="bg-green-800 font-dmSans text-sm py-1 px-2 rounded-lg text-white cursor-pointer hover:bg-green-400/10 hover:ring-1 hover:ring-green-500"
+						>Market</button>
+						<button
+							type="button"
+							hx-get={ templ.SafeURL(fmt.Sprintf("/book/json/%s/%s", anchor.MarketInfo.Platform.String(), param.Payload.CrossPlatformArb.Anchor.TokenId)) }
+							hx-target="#anchor-json"
+							hx-swap="innerHTML"
+							hx-indicator="#anchor-spinner"
+							class="bg-green-800 font-dmSans text-sm py-1 px-2 rounded-lg text-white cursor-pointer hover:bg-green-400/10 hover:ring-1 hover:ring-green-500"
+						>OrderBook</button>
+					</div>
+					<p class="font-bold font-archivoSemiBold">Anchor <span class="font-archivo font-extralight text-xs">{ fmt.Sprintf("(%s)", cases.Title(language.English).String(anchor.MarketInfo.Platform.String())) }</span></p>
+				</div>
+				<div id="anchor-json" class="flex-1 min-h-0 mt-2.5 transition-opacity htmx-request:opacity-50">
+					<pre
+						class="hidden bg-black/80 text-green-300 font-mono text-xs p-3 rounded-2xl h-full overflow-auto"
+					></pre>
+				</div>
+				<span
+					id="anchor-spinner"
+					class="htmx-indicator absolute inset-0 flex items-center justify-center pointer-events-none"
+				>
+					<span class="loading loading-dots loading-md"></span>
+				</span>
+			</div>
+			<!-- Match -->
+			<div class="match-market flex flex-col h-full min-h-0 relative">
+				<div class="flex justify-between items-start py-1.5 shrink-0">
+					<p class="font-bold font-archivoSemiBold">Match <span class="font-archivo font-extralight text-xs">{ fmt.Sprintf("(%s)", cases.Title(language.English).String(match.MarketInfo.Platform.String())) }</span></p>
+					<div>
+						<button
+							type="button"
+							hx-get={ templ.SafeURL(fmt.Sprintf("/market/json/%s/%s", match.MarketInfo.Platform.String(), match.MarketInfo.MarketId)) }
+							hx-target="#match-json"
+							hx-swap="innerHTML"
+							hx-indicator="#match-spinner"
+							class="bg-green-800 font-dmSans text-sm py-1 px-2 rounded-lg text-white cursor-pointer hover:bg-green-400/10 hover:ring-1 hover:ring-green-500"
+						>Market</button>
+						<button
+							type="button"
+							hx-get={ templ.SafeURL(fmt.Sprintf("/book/json/%s/%s", match.MarketInfo.Platform.String(), param.Payload.CrossPlatformArb.Match.TokenId)) }
+							hx-target="#match-json"
+							hx-swap="innerHTML"
+							hx-indicator="#match-spinner"
+							class="bg-green-800 font-dmSans text-sm py-1 px-2 rounded-lg text-white cursor-pointer hover:bg-green-400/10 hover:ring-1 hover:ring-green-500"
+						>OrderBook</button>
+					</div>
+				</div>
+				<div id="match-json" class="flex-1 min-h-0 mt-2.5 transition-opacity htmx-request:opacity-50">
+					<pre
+						class="hidden bg-black/80 text-green-300 font-mono text-xs p-3 rounded-2xl h-full overflow-auto"
+					></pre>
+				</div>
+				<span
+					id="match-spinner"
+					class="htmx-indicator absolute inset-0 flex items-center justify-center pointer-events-none"
+				>
+					<span class="loading loading-dots loading-md"></span>
+				</span>
+			</div>
+		</section>
+	</div>
+}
+
+templ JsonDetails(content string) {
+	<pre class="bg-black/80 text-green-300 font-mono text-xs p-3 rounded-2xl h-full overflow-auto">
+		{ content }
+	</pre>
 }

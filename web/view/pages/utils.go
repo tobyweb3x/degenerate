@@ -41,8 +41,17 @@ func humanizeArbTime(t time.Time) string {
 	}
 }
 
+func friendlyTimeFromString(s string) string {
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return s // fallback if parsing fails
+	}
+
+	return friendlyTime(t)
+}
+
 func friendlyTime(t time.Time) string {
-	now := time.Now().In(t.Location()) // Ensure we compare in the same timezone
+	now := time.Now().In(t.Location())
 
 	days := daysBetween(t, now)
 
@@ -51,11 +60,21 @@ func friendlyTime(t time.Time) string {
 	switch {
 	case days == 0:
 		return fmt.Sprintf("Today: %s", timeStr)
+
 	case days == 1:
 		return fmt.Sprintf("Yesterday: %s", timeStr)
+
 	case days > 1 && days <= 6:
 		dayName := t.Format("Mon")
 		return fmt.Sprintf("%dd ago (%s): %s", days, dayName, timeStr)
+
+	case days == -1:
+		return fmt.Sprintf("Tomorrow: %s", timeStr)
+
+	case days < -1 && days >= -6:
+		dayName := t.Format("Mon")
+		return fmt.Sprintf("In %dd (%s): %s", -days, dayName, timeStr)
+
 	default:
 		return t.Format("Mon 02 Jan 2006 03:04 PM")
 	}

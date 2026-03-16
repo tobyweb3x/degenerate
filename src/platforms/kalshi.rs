@@ -1,5 +1,5 @@
 use super::utils;
-use crate::models::{self, QdrantMarketConverter, constants, protos};
+use crate::models::{self, QdrantMarketConverter, protos};
 use crate::vector_store;
 use anyhow::{Context, Result};
 use kalshi_rs::{

@@ -87,21 +87,31 @@ message Arb {
 // THE ENVELOPE
 // ------------------------------------------------
 
-message Ebo {
+message ClientEbo {
     string correlation_id = 1;
     int64 found_at = 2;
 
     oneof action {
         SimilarityHit cross_platform_hit = 3;
         SimilarityHit intra_platform_hit = 4;
-        DiscoveredArbList  cross_platform_arb_discovery = 5;
-        DiscoveredArbList  intra_platform_arb_discovery = 6;
-        Arb cross_platform_arb = 7;
-        Arb intra_platform_arb = 8;
+
+        Arb cross_platform_arb = 5;
+        Arb intra_platform_arb = 6;
+    }
+}
+message ServerEbo {
+    string correlation_id = 1;
+    int64 found_at = 2;
+
+    oneof action {
+        DiscoveredArbList cross_platform_arb_discovery = 3;
+        DiscoveredArbList intra_platform_arb_discovery = 4;
+
+        Arb confirmed_and_run = 5;
     }
 }
 
 service EsuOdara {
-  rpc Esu(stream Ebo) returns (stream Ebo);
+  rpc Esu(stream ClientEbo) returns (stream ServerEbo);
 }
 

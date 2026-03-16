@@ -33,7 +33,7 @@ func (s *GrpcServer) Esu(stream protos.EsuOdara_EsuServer) error {
 	}
 
 	readErrCh := make(chan error, 1)
-	sendCh := make(chan *protos.Ebo, 100)
+	sendCh := make(chan *protos.ServerEbo, 100)
 
 	go func() {
 		defer close(readErrCh)
@@ -88,11 +88,11 @@ func (s *GrpcServer) Esu(stream protos.EsuOdara_EsuServer) error {
 	}
 }
 
-func (a *App) ProcessEbo(ctx context.Context, ebo *protos.Ebo) (*protos.Ebo, error) {
+func (a *App) ProcessEbo(ctx context.Context, ebo *protos.ClientEbo) (*protos.ServerEbo, error) {
 
 	switch p := ebo.Action.(type) {
 
-	case *protos.Ebo_CrossPlatformHit:
+	case *protos.ClientEbo_CrossPlatformHit:
 		hit := p.CrossPlatformHit
 
 		byteData, err := protojson.Marshal(hit)
@@ -107,7 +107,7 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.Ebo) (*protos.Ebo, err
 			byteData,
 		)
 
-	case *protos.Ebo_IntraPlatformHit:
+	case *protos.ClientEbo_IntraPlatformHit:
 		hit := p.IntraPlatformHit
 		byteData, err := frontend.ProtoMarshaler.Marshal(hit)
 		if err != nil {
@@ -121,7 +121,7 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.Ebo) (*protos.Ebo, err
 			byteData,
 		)
 
-	case *protos.Ebo_CrossPlatformArb:
+	case *protos.ClientEbo_CrossPlatformArb:
 		arb := p.CrossPlatformArb
 
 		byteData, err := protojson.Marshal(arb)
@@ -136,7 +136,7 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.Ebo) (*protos.Ebo, err
 			byteData,
 		)
 
-	case *protos.Ebo_IntraPlatformArb:
+	case *protos.ClientEbo_IntraPlatformArb:
 		arb := p.IntraPlatformArb
 
 		byteData, err := protojson.Marshal(arb)
@@ -153,7 +153,6 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.Ebo) (*protos.Ebo, err
 
 	case nil:
 		return nil, fmt.Errorf("received Ebo with empty payload")
-
 	}
 
 	return nil, fmt.Errorf("received unknown Action")

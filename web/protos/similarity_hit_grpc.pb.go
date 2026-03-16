@@ -26,7 +26,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type EsuOdaraClient interface {
-	Esu(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[Ebo, Ebo], error)
+	Esu(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ClientEbo, ServerEbo], error)
 }
 
 type esuOdaraClient struct {
@@ -37,24 +37,24 @@ func NewEsuOdaraClient(cc grpc.ClientConnInterface) EsuOdaraClient {
 	return &esuOdaraClient{cc}
 }
 
-func (c *esuOdaraClient) Esu(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[Ebo, Ebo], error) {
+func (c *esuOdaraClient) Esu(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ClientEbo, ServerEbo], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &EsuOdara_ServiceDesc.Streams[0], EsuOdara_Esu_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[Ebo, Ebo]{ClientStream: stream}
+	x := &grpc.GenericClientStream[ClientEbo, ServerEbo]{ClientStream: stream}
 	return x, nil
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type EsuOdara_EsuClient = grpc.BidiStreamingClient[Ebo, Ebo]
+type EsuOdara_EsuClient = grpc.BidiStreamingClient[ClientEbo, ServerEbo]
 
 // EsuOdaraServer is the server API for EsuOdara service.
 // All implementations must embed UnimplementedEsuOdaraServer
 // for forward compatibility.
 type EsuOdaraServer interface {
-	Esu(grpc.BidiStreamingServer[Ebo, Ebo]) error
+	Esu(grpc.BidiStreamingServer[ClientEbo, ServerEbo]) error
 	mustEmbedUnimplementedEsuOdaraServer()
 }
 
@@ -65,7 +65,7 @@ type EsuOdaraServer interface {
 // pointer dereference when methods are called.
 type UnimplementedEsuOdaraServer struct{}
 
-func (UnimplementedEsuOdaraServer) Esu(grpc.BidiStreamingServer[Ebo, Ebo]) error {
+func (UnimplementedEsuOdaraServer) Esu(grpc.BidiStreamingServer[ClientEbo, ServerEbo]) error {
 	return status.Error(codes.Unimplemented, "method Esu not implemented")
 }
 func (UnimplementedEsuOdaraServer) mustEmbedUnimplementedEsuOdaraServer() {}
@@ -90,11 +90,11 @@ func RegisterEsuOdaraServer(s grpc.ServiceRegistrar, srv EsuOdaraServer) {
 }
 
 func _EsuOdara_Esu_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(EsuOdaraServer).Esu(&grpc.GenericServerStream[Ebo, Ebo]{ServerStream: stream})
+	return srv.(EsuOdaraServer).Esu(&grpc.GenericServerStream[ClientEbo, ServerEbo]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type EsuOdara_EsuServer = grpc.BidiStreamingServer[Ebo, Ebo]
+type EsuOdara_EsuServer = grpc.BidiStreamingServer[ClientEbo, ServerEbo]
 
 // EsuOdara_ServiceDesc is the grpc.ServiceDesc for EsuOdara service.
 // It's only intended for direct use with grpc.RegisterService,

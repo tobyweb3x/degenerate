@@ -653,37 +653,35 @@ func (x *Arb) GetScored() float32 {
 	return 0
 }
 
-type Ebo struct {
+type ClientEbo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CorrelationId string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
 	FoundAt       int64                  `protobuf:"varint,2,opt,name=found_at,json=foundAt,proto3" json:"found_at,omitempty"`
 	// Types that are valid to be assigned to Action:
 	//
-	//	*Ebo_CrossPlatformHit
-	//	*Ebo_IntraPlatformHit
-	//	*Ebo_CrossPlatformArbDiscovery
-	//	*Ebo_IntraPlatformArbDiscovery
-	//	*Ebo_CrossPlatformArb
-	//	*Ebo_IntraPlatformArb
-	Action        isEbo_Action `protobuf_oneof:"action"`
+	//	*ClientEbo_CrossPlatformHit
+	//	*ClientEbo_IntraPlatformHit
+	//	*ClientEbo_CrossPlatformArb
+	//	*ClientEbo_IntraPlatformArb
+	Action        isClientEbo_Action `protobuf_oneof:"action"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Ebo) Reset() {
-	*x = Ebo{}
+func (x *ClientEbo) Reset() {
+	*x = ClientEbo{}
 	mi := &file_similarity_hit_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Ebo) String() string {
+func (x *ClientEbo) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Ebo) ProtoMessage() {}
+func (*ClientEbo) ProtoMessage() {}
 
-func (x *Ebo) ProtoReflect() protoreflect.Message {
+func (x *ClientEbo) ProtoReflect() protoreflect.Message {
 	mi := &file_similarity_hit_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -695,125 +693,209 @@ func (x *Ebo) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Ebo.ProtoReflect.Descriptor instead.
-func (*Ebo) Descriptor() ([]byte, []int) {
+// Deprecated: Use ClientEbo.ProtoReflect.Descriptor instead.
+func (*ClientEbo) Descriptor() ([]byte, []int) {
 	return file_similarity_hit_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *Ebo) GetCorrelationId() string {
+func (x *ClientEbo) GetCorrelationId() string {
 	if x != nil {
 		return x.CorrelationId
 	}
 	return ""
 }
 
-func (x *Ebo) GetFoundAt() int64 {
+func (x *ClientEbo) GetFoundAt() int64 {
 	if x != nil {
 		return x.FoundAt
 	}
 	return 0
 }
 
-func (x *Ebo) GetAction() isEbo_Action {
+func (x *ClientEbo) GetAction() isClientEbo_Action {
 	if x != nil {
 		return x.Action
 	}
 	return nil
 }
 
-func (x *Ebo) GetCrossPlatformHit() *SimilarityHit {
+func (x *ClientEbo) GetCrossPlatformHit() *SimilarityHit {
 	if x != nil {
-		if x, ok := x.Action.(*Ebo_CrossPlatformHit); ok {
+		if x, ok := x.Action.(*ClientEbo_CrossPlatformHit); ok {
 			return x.CrossPlatformHit
 		}
 	}
 	return nil
 }
 
-func (x *Ebo) GetIntraPlatformHit() *SimilarityHit {
+func (x *ClientEbo) GetIntraPlatformHit() *SimilarityHit {
 	if x != nil {
-		if x, ok := x.Action.(*Ebo_IntraPlatformHit); ok {
+		if x, ok := x.Action.(*ClientEbo_IntraPlatformHit); ok {
 			return x.IntraPlatformHit
 		}
 	}
 	return nil
 }
 
-func (x *Ebo) GetCrossPlatformArbDiscovery() *DiscoveredArbList {
+func (x *ClientEbo) GetCrossPlatformArb() *Arb {
 	if x != nil {
-		if x, ok := x.Action.(*Ebo_CrossPlatformArbDiscovery); ok {
-			return x.CrossPlatformArbDiscovery
-		}
-	}
-	return nil
-}
-
-func (x *Ebo) GetIntraPlatformArbDiscovery() *DiscoveredArbList {
-	if x != nil {
-		if x, ok := x.Action.(*Ebo_IntraPlatformArbDiscovery); ok {
-			return x.IntraPlatformArbDiscovery
-		}
-	}
-	return nil
-}
-
-func (x *Ebo) GetCrossPlatformArb() *Arb {
-	if x != nil {
-		if x, ok := x.Action.(*Ebo_CrossPlatformArb); ok {
+		if x, ok := x.Action.(*ClientEbo_CrossPlatformArb); ok {
 			return x.CrossPlatformArb
 		}
 	}
 	return nil
 }
 
-func (x *Ebo) GetIntraPlatformArb() *Arb {
+func (x *ClientEbo) GetIntraPlatformArb() *Arb {
 	if x != nil {
-		if x, ok := x.Action.(*Ebo_IntraPlatformArb); ok {
+		if x, ok := x.Action.(*ClientEbo_IntraPlatformArb); ok {
 			return x.IntraPlatformArb
 		}
 	}
 	return nil
 }
 
-type isEbo_Action interface {
-	isEbo_Action()
+type isClientEbo_Action interface {
+	isClientEbo_Action()
 }
 
-type Ebo_CrossPlatformHit struct {
+type ClientEbo_CrossPlatformHit struct {
 	CrossPlatformHit *SimilarityHit `protobuf:"bytes,3,opt,name=cross_platform_hit,json=crossPlatformHit,proto3,oneof"`
 }
 
-type Ebo_IntraPlatformHit struct {
+type ClientEbo_IntraPlatformHit struct {
 	IntraPlatformHit *SimilarityHit `protobuf:"bytes,4,opt,name=intra_platform_hit,json=intraPlatformHit,proto3,oneof"`
 }
 
-type Ebo_CrossPlatformArbDiscovery struct {
-	CrossPlatformArbDiscovery *DiscoveredArbList `protobuf:"bytes,5,opt,name=cross_platform_arb_discovery,json=crossPlatformArbDiscovery,proto3,oneof"`
+type ClientEbo_CrossPlatformArb struct {
+	CrossPlatformArb *Arb `protobuf:"bytes,5,opt,name=cross_platform_arb,json=crossPlatformArb,proto3,oneof"`
 }
 
-type Ebo_IntraPlatformArbDiscovery struct {
-	IntraPlatformArbDiscovery *DiscoveredArbList `protobuf:"bytes,6,opt,name=intra_platform_arb_discovery,json=intraPlatformArbDiscovery,proto3,oneof"`
+type ClientEbo_IntraPlatformArb struct {
+	IntraPlatformArb *Arb `protobuf:"bytes,6,opt,name=intra_platform_arb,json=intraPlatformArb,proto3,oneof"`
 }
 
-type Ebo_CrossPlatformArb struct {
-	CrossPlatformArb *Arb `protobuf:"bytes,7,opt,name=cross_platform_arb,json=crossPlatformArb,proto3,oneof"`
+func (*ClientEbo_CrossPlatformHit) isClientEbo_Action() {}
+
+func (*ClientEbo_IntraPlatformHit) isClientEbo_Action() {}
+
+func (*ClientEbo_CrossPlatformArb) isClientEbo_Action() {}
+
+func (*ClientEbo_IntraPlatformArb) isClientEbo_Action() {}
+
+type ServerEbo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CorrelationId string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
+	FoundAt       int64                  `protobuf:"varint,2,opt,name=found_at,json=foundAt,proto3" json:"found_at,omitempty"`
+	// Types that are valid to be assigned to Action:
+	//
+	//	*ServerEbo_CrossPlatformArbDiscovery
+	//	*ServerEbo_IntraPlatformArbDiscovery
+	//	*ServerEbo_ConfirmedAndRun
+	Action        isServerEbo_Action `protobuf_oneof:"action"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
-type Ebo_IntraPlatformArb struct {
-	IntraPlatformArb *Arb `protobuf:"bytes,8,opt,name=intra_platform_arb,json=intraPlatformArb,proto3,oneof"`
+func (x *ServerEbo) Reset() {
+	*x = ServerEbo{}
+	mi := &file_similarity_hit_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
 }
 
-func (*Ebo_CrossPlatformHit) isEbo_Action() {}
+func (x *ServerEbo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
 
-func (*Ebo_IntraPlatformHit) isEbo_Action() {}
+func (*ServerEbo) ProtoMessage() {}
 
-func (*Ebo_CrossPlatformArbDiscovery) isEbo_Action() {}
+func (x *ServerEbo) ProtoReflect() protoreflect.Message {
+	mi := &file_similarity_hit_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
 
-func (*Ebo_IntraPlatformArbDiscovery) isEbo_Action() {}
+// Deprecated: Use ServerEbo.ProtoReflect.Descriptor instead.
+func (*ServerEbo) Descriptor() ([]byte, []int) {
+	return file_similarity_hit_proto_rawDescGZIP(), []int{10}
+}
 
-func (*Ebo_CrossPlatformArb) isEbo_Action() {}
+func (x *ServerEbo) GetCorrelationId() string {
+	if x != nil {
+		return x.CorrelationId
+	}
+	return ""
+}
 
-func (*Ebo_IntraPlatformArb) isEbo_Action() {}
+func (x *ServerEbo) GetFoundAt() int64 {
+	if x != nil {
+		return x.FoundAt
+	}
+	return 0
+}
+
+func (x *ServerEbo) GetAction() isServerEbo_Action {
+	if x != nil {
+		return x.Action
+	}
+	return nil
+}
+
+func (x *ServerEbo) GetCrossPlatformArbDiscovery() *DiscoveredArbList {
+	if x != nil {
+		if x, ok := x.Action.(*ServerEbo_CrossPlatformArbDiscovery); ok {
+			return x.CrossPlatformArbDiscovery
+		}
+	}
+	return nil
+}
+
+func (x *ServerEbo) GetIntraPlatformArbDiscovery() *DiscoveredArbList {
+	if x != nil {
+		if x, ok := x.Action.(*ServerEbo_IntraPlatformArbDiscovery); ok {
+			return x.IntraPlatformArbDiscovery
+		}
+	}
+	return nil
+}
+
+func (x *ServerEbo) GetConfirmedAndRun() *Arb {
+	if x != nil {
+		if x, ok := x.Action.(*ServerEbo_ConfirmedAndRun); ok {
+			return x.ConfirmedAndRun
+		}
+	}
+	return nil
+}
+
+type isServerEbo_Action interface {
+	isServerEbo_Action()
+}
+
+type ServerEbo_CrossPlatformArbDiscovery struct {
+	CrossPlatformArbDiscovery *DiscoveredArbList `protobuf:"bytes,3,opt,name=cross_platform_arb_discovery,json=crossPlatformArbDiscovery,proto3,oneof"`
+}
+
+type ServerEbo_IntraPlatformArbDiscovery struct {
+	IntraPlatformArbDiscovery *DiscoveredArbList `protobuf:"bytes,4,opt,name=intra_platform_arb_discovery,json=intraPlatformArbDiscovery,proto3,oneof"`
+}
+
+type ServerEbo_ConfirmedAndRun struct {
+	ConfirmedAndRun *Arb `protobuf:"bytes,5,opt,name=confirmed_and_run,json=confirmedAndRun,proto3,oneof"`
+}
+
+func (*ServerEbo_CrossPlatformArbDiscovery) isServerEbo_Action() {}
+
+func (*ServerEbo_IntraPlatformArbDiscovery) isServerEbo_Action() {}
+
+func (*ServerEbo_ConfirmedAndRun) isServerEbo_Action() {}
 
 var File_similarity_hit_proto protoreflect.FileDescriptor
 
@@ -860,16 +942,21 @@ const file_similarity_hit_proto_rawDesc = "" +
 	"\x03Arb\x124\n" +
 	"\x06anchor\x18\x01 \x01(\v2\x1c.similarityhit.ArbEssentialsR\x06anchor\x122\n" +
 	"\x05match\x18\x02 \x01(\v2\x1c.similarityhit.ArbEssentialsR\x05match\x12\x16\n" +
-	"\x06scored\x18\x03 \x01(\x02R\x06scored\"\xbf\x04\n" +
-	"\x03Ebo\x12%\n" +
+	"\x06scored\x18\x03 \x01(\x02R\x06scored\"\xfb\x02\n" +
+	"\tClientEbo\x12%\n" +
 	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x19\n" +
 	"\bfound_at\x18\x02 \x01(\x03R\afoundAt\x12L\n" +
 	"\x12cross_platform_hit\x18\x03 \x01(\v2\x1c.similarityhit.SimilarityHitH\x00R\x10crossPlatformHit\x12L\n" +
-	"\x12intra_platform_hit\x18\x04 \x01(\v2\x1c.similarityhit.SimilarityHitH\x00R\x10intraPlatformHit\x12c\n" +
-	"\x1ccross_platform_arb_discovery\x18\x05 \x01(\v2 .similarityhit.DiscoveredArbListH\x00R\x19crossPlatformArbDiscovery\x12c\n" +
-	"\x1cintra_platform_arb_discovery\x18\x06 \x01(\v2 .similarityhit.DiscoveredArbListH\x00R\x19intraPlatformArbDiscovery\x12B\n" +
-	"\x12cross_platform_arb\x18\a \x01(\v2\x12.similarityhit.ArbH\x00R\x10crossPlatformArb\x12B\n" +
-	"\x12intra_platform_arb\x18\b \x01(\v2\x12.similarityhit.ArbH\x00R\x10intraPlatformArbB\b\n" +
+	"\x12intra_platform_hit\x18\x04 \x01(\v2\x1c.similarityhit.SimilarityHitH\x00R\x10intraPlatformHit\x12B\n" +
+	"\x12cross_platform_arb\x18\x05 \x01(\v2\x12.similarityhit.ArbH\x00R\x10crossPlatformArb\x12B\n" +
+	"\x12intra_platform_arb\x18\x06 \x01(\v2\x12.similarityhit.ArbH\x00R\x10intraPlatformArbB\b\n" +
+	"\x06action\"\xe3\x02\n" +
+	"\tServerEbo\x12%\n" +
+	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x19\n" +
+	"\bfound_at\x18\x02 \x01(\x03R\afoundAt\x12c\n" +
+	"\x1ccross_platform_arb_discovery\x18\x03 \x01(\v2 .similarityhit.DiscoveredArbListH\x00R\x19crossPlatformArbDiscovery\x12c\n" +
+	"\x1cintra_platform_arb_discovery\x18\x04 \x01(\v2 .similarityhit.DiscoveredArbListH\x00R\x19intraPlatformArbDiscovery\x12@\n" +
+	"\x11confirmed_and_run\x18\x05 \x01(\v2\x12.similarityhit.ArbH\x00R\x0fconfirmedAndRunB\b\n" +
 	"\x06action*&\n" +
 	"\bPlatform\x12\x0e\n" +
 	"\n" +
@@ -878,9 +965,9 @@ const file_similarity_hit_proto_rawDesc = "" +
 	"\x06KALSHI\x10\x01*\"\n" +
 	"\x03Leg\x12\f\n" +
 	"\bLEG_LEFT\x10\x00\x12\r\n" +
-	"\tLEG_RIGHT\x10\x012=\n" +
-	"\bEsuOdara\x121\n" +
-	"\x03Esu\x12\x12.similarityhit.Ebo\x1a\x12.similarityhit.Ebo(\x010\x01B\rZ\vweb/protos;b\x06proto3"
+	"\tLEG_RIGHT\x10\x012I\n" +
+	"\bEsuOdara\x12=\n" +
+	"\x03Esu\x12\x18.similarityhit.ClientEbo\x1a\x18.similarityhit.ServerEbo(\x010\x01B\rZ\vweb/protos;b\x06proto3"
 
 var (
 	file_similarity_hit_proto_rawDescOnce sync.Once
@@ -895,7 +982,7 @@ func file_similarity_hit_proto_rawDescGZIP() []byte {
 }
 
 var file_similarity_hit_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_similarity_hit_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_similarity_hit_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_similarity_hit_proto_goTypes = []any{
 	(Platform)(0),             // 0: similarityhit.Platform
 	(Leg)(0),                  // 1: similarityhit.Leg
@@ -908,7 +995,8 @@ var file_similarity_hit_proto_goTypes = []any{
 	(*DiscoveredArbList)(nil), // 8: similarityhit.DiscoveredArbList
 	(*ArbEssentials)(nil),     // 9: similarityhit.ArbEssentials
 	(*Arb)(nil),               // 10: similarityhit.Arb
-	(*Ebo)(nil),               // 11: similarityhit.Ebo
+	(*ClientEbo)(nil),         // 11: similarityhit.ClientEbo
+	(*ServerEbo)(nil),         // 12: similarityhit.ServerEbo
 }
 var file_similarity_hit_proto_depIdxs = []int32{
 	0,  // 0: similarityhit.MarketInfo.platform:type_name -> similarityhit.Platform
@@ -924,19 +1012,20 @@ var file_similarity_hit_proto_depIdxs = []int32{
 	6,  // 10: similarityhit.ArbEssentials.discovery:type_name -> similarityhit.Discovery
 	9,  // 11: similarityhit.Arb.anchor:type_name -> similarityhit.ArbEssentials
 	9,  // 12: similarityhit.Arb.match:type_name -> similarityhit.ArbEssentials
-	5,  // 13: similarityhit.Ebo.cross_platform_hit:type_name -> similarityhit.SimilarityHit
-	5,  // 14: similarityhit.Ebo.intra_platform_hit:type_name -> similarityhit.SimilarityHit
-	8,  // 15: similarityhit.Ebo.cross_platform_arb_discovery:type_name -> similarityhit.DiscoveredArbList
-	8,  // 16: similarityhit.Ebo.intra_platform_arb_discovery:type_name -> similarityhit.DiscoveredArbList
-	10, // 17: similarityhit.Ebo.cross_platform_arb:type_name -> similarityhit.Arb
-	10, // 18: similarityhit.Ebo.intra_platform_arb:type_name -> similarityhit.Arb
-	11, // 19: similarityhit.EsuOdara.Esu:input_type -> similarityhit.Ebo
-	11, // 20: similarityhit.EsuOdara.Esu:output_type -> similarityhit.Ebo
-	20, // [20:21] is the sub-list for method output_type
-	19, // [19:20] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	5,  // 13: similarityhit.ClientEbo.cross_platform_hit:type_name -> similarityhit.SimilarityHit
+	5,  // 14: similarityhit.ClientEbo.intra_platform_hit:type_name -> similarityhit.SimilarityHit
+	10, // 15: similarityhit.ClientEbo.cross_platform_arb:type_name -> similarityhit.Arb
+	10, // 16: similarityhit.ClientEbo.intra_platform_arb:type_name -> similarityhit.Arb
+	8,  // 17: similarityhit.ServerEbo.cross_platform_arb_discovery:type_name -> similarityhit.DiscoveredArbList
+	8,  // 18: similarityhit.ServerEbo.intra_platform_arb_discovery:type_name -> similarityhit.DiscoveredArbList
+	10, // 19: similarityhit.ServerEbo.confirmed_and_run:type_name -> similarityhit.Arb
+	11, // 20: similarityhit.EsuOdara.Esu:input_type -> similarityhit.ClientEbo
+	12, // 21: similarityhit.EsuOdara.Esu:output_type -> similarityhit.ServerEbo
+	21, // [21:22] is the sub-list for method output_type
+	20, // [20:21] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_similarity_hit_proto_init() }
@@ -945,12 +1034,15 @@ func file_similarity_hit_proto_init() {
 		return
 	}
 	file_similarity_hit_proto_msgTypes[9].OneofWrappers = []any{
-		(*Ebo_CrossPlatformHit)(nil),
-		(*Ebo_IntraPlatformHit)(nil),
-		(*Ebo_CrossPlatformArbDiscovery)(nil),
-		(*Ebo_IntraPlatformArbDiscovery)(nil),
-		(*Ebo_CrossPlatformArb)(nil),
-		(*Ebo_IntraPlatformArb)(nil),
+		(*ClientEbo_CrossPlatformHit)(nil),
+		(*ClientEbo_IntraPlatformHit)(nil),
+		(*ClientEbo_CrossPlatformArb)(nil),
+		(*ClientEbo_IntraPlatformArb)(nil),
+	}
+	file_similarity_hit_proto_msgTypes[10].OneofWrappers = []any{
+		(*ServerEbo_CrossPlatformArbDiscovery)(nil),
+		(*ServerEbo_IntraPlatformArbDiscovery)(nil),
+		(*ServerEbo_ConfirmedAndRun)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -958,7 +1050,7 @@ func file_similarity_hit_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_similarity_hit_proto_rawDesc), len(file_similarity_hit_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

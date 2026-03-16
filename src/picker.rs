@@ -3,19 +3,19 @@ use crate::platforms;
 use anyhow::{self, Context};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-// use tracing;
+use tracing;
 
 pub struct Picker {
     platforms: platforms::Platfroms,
-    rx: mpsc::Receiver<protos::Ebo>,
-    tx: mpsc::Sender<protos::Ebo>,
+    rx: mpsc::Receiver<protos::ServerEbo>,
+    tx: mpsc::Sender<protos::ClientEbo>,
 }
 
 impl Picker {
     pub fn new(
         platforms: platforms::Platfroms,
-        rx: mpsc::Receiver<protos::Ebo>,
-        tx: mpsc::Sender<protos::Ebo>,
+        rx: mpsc::Receiver<protos::ServerEbo>,
+        tx: mpsc::Sender<protos::ClientEbo>,
     ) -> Self {
         Self { platforms, rx, tx }
     }
@@ -40,11 +40,14 @@ impl Picker {
                     };
 
                     match action {
-                        protos::ebo::Action::CrossPlatformArbDiscovery(list) => {
+                        protos::server_ebo::Action::CrossPlatformArbDiscovery(list)
+                        | protos::server_ebo::Action::IntraPlatformArbDiscovery(list) => {
                             self.resolve_discovered_list(list).await
-                        }
+                        },
 
-                        others => { println!("got other grpc messages {others:#?}")}
+                        protos::server_ebo::Action::ConfirmedAndRun(arb ) => {
+                            println!("got a ConfirmedAndRun, {arb:#?}");
+                        },
                     }
 
                 }
@@ -80,14 +83,14 @@ impl Picker {
 
             let _ = self
                 .tx
-                .send(protos::Ebo {
+                .send(protos::ClientEbo {
                     correlation_id: models::generate_uuid_v5(format!(
                         "{}:{}",
                         &arb.anchor.as_ref().unwrap().token_id,
                         &arb.r#match.as_ref().unwrap().token_id
                     )),
                     found_at: chrono::Utc::now().timestamp_millis(),
-                    action: Some(protos::ebo::Action::CrossPlatformArb(arb)),
+                    action: Some(protos::client_ebo::Action::CrossPlatformArb(arb)),
                 })
                 .await
                 .inspect_err(|e| {
@@ -108,7 +111,7 @@ impl Picker {
         let platform = protos::Platform::try_from(market_info.platform)?;
 
         // just in-case anything has been updated
-        let (new_market, token_id) = match platform {
+        let (mut new_market, token_id) = match platform {
             protos::Platform::Kalshi => {
                 self.get_arb_entity_detail_kalshi(market_info.market_id.as_str())
                     .await?
@@ -122,6 +125,9 @@ impl Picker {
                 .await?
             }
         };
+
+        new_market.market_category = market_info.market_category.to_string();
+        new_market.market_subcategory = market_info.market_subcategory.to_string();
 
         Ok(protos::ArbEssentials {
             discovery: Some(protos::Discovery {

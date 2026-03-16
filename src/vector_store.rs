@@ -36,14 +36,14 @@ pub struct VectorStore {
     qdrant_client: Qdrant,
     collection_name: &'static str,
     semantic_model: Arc<SentenceTransformer>,
-    tx: mpsc::Sender<protos::Ebo>,
+    tx: mpsc::Sender<protos::ClientEbo>,
 }
 
 impl VectorStore {
     pub async fn new_metal(
         url: &str,
         collection_name: &'static str,
-        tx: mpsc::Sender<protos::Ebo>,
+        tx: mpsc::Sender<protos::ClientEbo>,
     ) -> anyhow::Result<Self> {
         let device =
             candle_core::Device::new_metal(0).context("metal device initialization failed")?;
@@ -57,7 +57,7 @@ impl VectorStore {
         url: &str,
         collection_name: &'static str,
         device: Device,
-        tx: mpsc::Sender<protos::Ebo>,
+        tx: mpsc::Sender<protos::ClientEbo>,
     ) -> anyhow::Result<Self> {
         let client = Qdrant::from_url(url)
             .skip_compatibility_check()
@@ -275,13 +275,13 @@ impl VectorStore {
         self.insert(point).await?;
 
         self.tx
-            .send(protos::Ebo {
+            .send(protos::ClientEbo {
                 correlation_id: models::generate_uuid_v5(format!(
                     "{}:{}",
                     clone_anchor_market_info.uuid, clone_anchor_market_info.market_id
                 )),
                 found_at: chrono::Utc::now().timestamp_millis(),
-                action: Some(protos::ebo::Action::CrossPlatformHit(hit)),
+                action: Some(protos::client_ebo::Action::CrossPlatformHit(hit)),
             })
             .await
             .context("error sending to channel")?;
@@ -297,7 +297,6 @@ impl VectorStore {
         T: TryInto<models::QdrantPointData>,
         T::Error: Into<anyhow::Error>,
     {
-
         let (converted_data, filters): (Vec<models::QdrantPointData>, Vec<Option<Filter>>) = values
             .into_iter()
             .filter_map(|(t, f)| match t.try_into().map_err(Into::into) {
@@ -363,13 +362,13 @@ impl VectorStore {
             let hit = protos::SimilarityHit::try_from_results(take, response.result)?;
 
             self.tx
-                .send(protos::Ebo {
+                .send(protos::ClientEbo {
                     correlation_id: models::generate_uuid_v5(format!(
                         "{}:{}",
                         clone_take_market_info.uuid, clone_take_market_info.market_id
                     )),
                     found_at: chrono::Utc::now().timestamp_millis(),
-                    action: Some(protos::ebo::Action::CrossPlatformHit(hit)),
+                    action: Some(protos::client_ebo::Action::CrossPlatformHit(hit)),
                 })
                 .await
                 .context("error sending to channel")?;
