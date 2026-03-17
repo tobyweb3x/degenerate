@@ -89,6 +89,7 @@ impl VectorStore {
         })
     }
 
+    #[allow(dead_code)]
     pub async fn disable_hnsw(&self) -> anyhow::Result<()> {
         self.qdrant_client
             .update_collection(
@@ -377,6 +378,7 @@ impl VectorStore {
         anyhow::Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn delete_points(&self, ids: Vec<PointId>) -> anyhow::Result<()> {
         self.qdrant_client
             .delete_points(
@@ -477,6 +479,7 @@ impl VectorStore {
         })
     }
 
+    #[allow(dead_code)]
     pub fn create_intra_platform_filter(
         platform: Option<protos::Platform>,
         market: &models::MarketTag,

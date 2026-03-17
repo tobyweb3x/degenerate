@@ -5,13 +5,14 @@ use qdrant_client::{Payload, qdrant};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use std::fmt::{self, format};
+use std::fmt;
 use uuid::Uuid;
 
 pub mod protos {
     tonic::include_proto!("similarityhit");
 }
 
+#[allow(dead_code)]
 pub mod constants {
     pub const PLATFORM_POLYMARKET: &str = "POLYMARKET";
     pub const PLATFORM_KALSHI: &str = "KALSHI";

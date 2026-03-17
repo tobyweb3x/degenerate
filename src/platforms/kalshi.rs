@@ -18,6 +18,7 @@ pub struct MyKalshiClient {
     http_client: KalshiClient,
     ws_client: Arc<KalshiWebsocketClient>,
     qdrant_client: vector_store::VectorStore,
+    #[allow(dead_code)]
     account: kalshi_rs::Account,
 }
 

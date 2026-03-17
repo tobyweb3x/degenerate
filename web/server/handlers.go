@@ -233,7 +233,6 @@ func (a *App) resolveHitSubmit(w http.ResponseWriter, r *http.Request) {
 	var mappings []LegMapping
 	{
 		for _, raw := range rawSelections {
-			fmt.Printf("raw---%s\n\n", raw)
 			parts := strings.Split(raw, "|") // expected Format: "uuid|0|1"
 			if len(parts) != 3 {
 				fmt.Printf("invalid selection format: %s\n", raw)
