@@ -1,4 +1,4 @@
-use super::utils;
+use super::{WsEventMessage, format_duration_ago};
 use crate::models::{self, QdrantMarketConverter, protos};
 use crate::vector_store;
 use anyhow::{Context, Result};
@@ -10,7 +10,7 @@ use kalshi_rs::{
     websocket::models::KalshiSocketMessage,
 };
 use std::{sync::Arc, time::Duration};
-use tokio::task::JoinSet;
+use tokio::{sync::mpsc, task::JoinSet};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
@@ -20,10 +20,15 @@ pub struct MyKalshiClient {
     qdrant_client: vector_store::VectorStore,
     #[allow(dead_code)]
     account: kalshi_rs::Account,
+    ws_tx: mpsc::Sender<WsEventMessage>,
 }
 
 impl MyKalshiClient {
-    pub fn new(account: kalshi_rs::Account, qdrant_client: vector_store::VectorStore) -> Self {
+    pub fn new(
+        account: kalshi_rs::Account,
+        qdrant_client: vector_store::VectorStore,
+        ws_tx: mpsc::Sender<WsEventMessage>,
+    ) -> Self {
         let kalshi_http = KalshiClient::new_with_config(
             account.clone(),
             None,
@@ -41,6 +46,7 @@ impl MyKalshiClient {
             http_client: kalshi_http,
             ws_client: Arc::new(kalshi_ws),
             qdrant_client,
+            ws_tx,
         }
     }
 
@@ -51,6 +57,10 @@ impl MyKalshiClient {
             .context("failed to establish Kalshi WebSocket connection")?;
 
         Ok(())
+    }
+
+    pub fn ws_client(&self) -> Arc<KalshiWebsocketClient> {
+        self.ws_client.clone()
     }
 
     pub fn http_client(&self) -> &KalshiClient {
@@ -118,10 +128,26 @@ impl MyKalshiClient {
                 tracing::info!("OK response: {:#?}", res);
             }
 
-            KalshiSocketMessage::Ping(payload) => {
-                if let Err(e) = self.ws_client.send_pong(payload).await {
-                    tracing::error!("error sending pong: {e}");
-                }
+            KalshiSocketMessage::Ping(payload) => self
+                .ws_client
+                .send_pong(payload)
+                .await
+                .context("error sending pong(kalshi)")?,
+
+            KalshiSocketMessage::OrderbookDelta(delta) => {
+                self.ws_tx
+                    .send(WsEventMessage::Kalshi(KalshiSocketMessage::OrderbookDelta(
+                        delta,
+                    )))
+                    .await?
+            }
+
+            KalshiSocketMessage::TickerUpdate(ticker) => {
+                self.ws_tx
+                    .send(WsEventMessage::Kalshi(KalshiSocketMessage::TickerUpdate(
+                        ticker,
+                    )))
+                    .await?
             }
 
             KalshiSocketMessage::MarketLifecycleV2(event) => {
@@ -131,8 +157,6 @@ impl MyKalshiClient {
                 ) {
                     return Ok(());
                 }
-
-                // println!("kalshi got new marker: {}", event.msg.event_type.as_str());
 
                 let Ok(value) = self
                     .http_client
@@ -171,7 +195,7 @@ impl MyKalshiClient {
                             &market,
                         ),
                     )
-                    .await?;
+                    .await?
             }
 
             KalshiSocketMessage::ErrorResponse(err) => {
@@ -402,7 +426,7 @@ impl MyKalshiClient {
 
         tracing::info!(
             "starting backfill for kalshi from {}",
-            utils::format_duration_ago(duration)
+            format_duration_ago(duration)
         );
 
         self.backfill_kalshi_sport_history(duration, shutdown)

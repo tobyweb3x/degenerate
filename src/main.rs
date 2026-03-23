@@ -10,6 +10,7 @@ mod models;
 mod picker;
 mod platforms;
 mod vector_store;
+mod execution;
 
 #[tokio::main]
 async fn main() -> Result<()> {

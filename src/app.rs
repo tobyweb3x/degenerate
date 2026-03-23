@@ -30,16 +30,27 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
     let kalshi_vs = vector_store.clone();
     let polymarket_vs = vector_store.clone();
 
-    let kalshi_client = platforms::kalshi::MyKalshiClient::new(kalshi_account, kalshi_vs);
+    let (ws_tx, ws_rx) = mpsc::channel::<platforms::WsEventMessage>(10_000);
+
+    let kalshi_client =
+        platforms::kalshi::MyKalshiClient::new(kalshi_account, kalshi_vs, ws_tx.clone());
     kalshi_client.test_ws_connect().await?;
-    let mut polymarket_client = platforms::polymarket::MyPolymarketClient::new(polymarket_vs);
+
+    let mut polymarket_client =
+        platforms::polymarket::MyPolymarketClient::new(polymarket_vs, ws_tx.clone());
+
     let platforms = platforms::Platfroms::new(kalshi_client.clone(), polymarket_client.clone());
 
     // picker
     let picker_shutdown = shutdown.clone();
     let clone_bot_to_grpc_tx = bot_to_grpc_tx.clone();
     let picker_handle = tokio::spawn(async move {
-        let mut picker = picker::Picker::new(platforms, grpc_to_bot_rx, clone_bot_to_grpc_tx);
+        let mut picker = picker::Picker::new(
+            platforms,
+            grpc_to_bot_rx,
+            clone_bot_to_grpc_tx,
+            ws_rx,
+        );
         picker.run_picker(picker_shutdown).await
     });
 

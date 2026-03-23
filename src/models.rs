@@ -2,7 +2,7 @@ use anyhow::{Context, Result, ensure};
 use polymarket_hft::client::polymarket::gamma;
 use qdrant_client::{Payload, qdrant};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::fmt;
@@ -483,5 +483,115 @@ impl fmt::Display for protos::MatchCandidate {
         writeln!(f, "ticker : {}", r#match.market_id)?;
 
         Ok(())
+    }
+}
+
+pub fn de_str_to_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    s.parse::<f64>().map_err(serde::de::Error::custom)
+}
+
+pub fn de_str_to_i64<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    s.parse::<i64>().map_err(serde::de::Error::custom)
+}
+
+pub fn parse_f32(s: &str) -> anyhow::Result<f32> {
+    Ok(s.parse::<f32>().context("error parsing string to f32")?)
+}
+
+/// MarketKey should be the asset_id for polymarket and market_ticker for kalshi
+pub fn make_market_key(asset_id: &str, platform: protos::Platform) -> MarketKey {
+    format!("{}:{}", platform.as_str_name(), asset_id)
+}
+
+/// MarketKey should be the asset_id for polymarket and market_ticker for kalshi
+pub type MarketKey = String;
+pub type correlationID = String;
+
+#[derive(Debug, Clone)]
+pub struct ArbMinifiedInfo {
+    pub market_key: MarketKey,
+    pub platform: protos::Platform,
+    pub market_id: String,
+    pub token_id: String,
+    pub leg: protos::Leg,
+}
+
+#[derive(Debug, Clone)]
+pub struct ArbMinifiedInfoPair {
+    pub anchor: ArbMinifiedInfo,
+    pub r#match: ArbMinifiedInfo,
+    pub _scored: f32,
+}
+
+pub struct ArbWatch {
+    pub correlation_id: correlationID,
+    pub arb: ArbMinifiedInfoPair,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TopOfBook {
+    pub best_bid: f32,
+    pub bid_size: f32,
+    pub best_ask: f32,
+    pub ask_size: f32,
+    pub spread: f32,
+    pub timestamp_ms: i64,
+}
+
+impl TryFrom<protos::ArbEssentials> for ArbMinifiedInfo {
+    type Error = anyhow::Error;
+
+    fn try_from(essentials: protos::ArbEssentials) -> Result<Self, Self::Error> {
+        let discovery = essentials
+            .discovery
+            .context("Missing 'discovery' in ArbEssentials")?;
+        let market_info = discovery
+            .market_info
+            .context("Missing 'market_info' in Discovery")?;
+
+        if market_info.market_id.is_empty() {
+            anyhow::bail!("market_id cannot be empty")
+        }
+
+        if essentials.token_id.is_empty() {
+            anyhow::bail!("token_id cannot be empty")
+        }
+
+        let platform = protos::Platform::try_from(market_info.platform)
+            .context(format!("Invalid platform ID: {}", market_info.platform))?;
+
+        let leg = protos::Leg::try_from(discovery.leg)
+            .context(format!("Invalid leg ID: {}", discovery.leg))?;
+
+        Ok(Self {
+            market_key: make_market_key(essentials.token_id.as_str(), platform),
+            market_id: market_info.market_id,
+            token_id: essentials.token_id,
+            platform,
+            leg,
+        })
+    }
+}
+
+impl TryFrom<protos::Arb> for ArbMinifiedInfoPair {
+    type Error = anyhow::Error;
+
+    fn try_from(arb: protos::Arb) -> Result<Self, Self::Error> {
+        let anchor_essentials = arb.anchor.context("Missing 'anchor' in Arb")?;
+        let match_essentials = arb.r#match.context("Missing 'match' in Arb")?;
+
+        Ok(Self {
+            anchor: ArbMinifiedInfo::try_from(anchor_essentials)?,
+            r#match: ArbMinifiedInfo::try_from(match_essentials)?,
+            _scored: arb.scored,
+        })
     }
 }

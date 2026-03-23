@@ -1,15 +1,13 @@
-use super::utils;
+use super::{WsEventMessage, format_duration_ago};
 use crate::models::QdrantMarketConverter;
+use crate::models::{self, protos};
 use crate::vector_store;
-use crate::{
-    models::{self, protos},
-};
 use alloy::{hex, signers::local::PrivateKeySigner};
 use anyhow::{Context, Result};
 use chrono::{Duration as ChronoDuration, SecondsFormat, Utc};
 use polymarket_hft::client::polymarket::{clob, clob::ws::WsMessage, gamma};
 use std::{fs, path::Path, time::Duration};
-use tokio::task::JoinSet;
+use tokio::{sync::mpsc, task::JoinSet};
 use tokio_util::sync::CancellationToken;
 
 const PRIVATE_KEY_FILE: &str = "privateKey.hex";
@@ -19,19 +17,28 @@ pub struct MyPolymarketClient {
     gamma_client: gamma::Client,
     clob_ws_client: clob::ws::ClobWsClient,
     qdrant_client: vector_store::VectorStore,
+    ws_tx: mpsc::Sender<WsEventMessage>,
 }
 
 impl MyPolymarketClient {
-    pub fn new(qdrant_client: vector_store::VectorStore) -> Self {
+    pub fn new(
+        qdrant_client: vector_store::VectorStore,
+        ws_tx: mpsc::Sender<WsEventMessage>,
+    ) -> Self {
         Self {
             gamma_client: gamma::Client::new(),
             clob_ws_client: clob::ws::ClobWsClient::new(),
             qdrant_client,
+            ws_tx,
         }
     }
 
     pub fn gamma_client(&self) -> &gamma::Client {
         &self.gamma_client
+    }
+
+    pub fn ws_client(&self) -> clob::ws::ClobWsClient {
+        self.clob_ws_client.clone()
     }
 
     pub async fn run_polymarket(&mut self, shutdown: CancellationToken) -> Result<()> {
@@ -111,8 +118,24 @@ impl MyPolymarketClient {
                     .await?
             }
 
+            clob::ws::WsMessage::BestBidAsk(best) => {
+                self.ws_tx
+                    .send(WsEventMessage::Polymarket(clob::ws::WsMessage::BestBidAsk(
+                        best,
+                    )))
+                    .await?
+            }
+
+            clob::ws::WsMessage::PriceChange(change) => {
+                self.ws_tx
+                    .send(WsEventMessage::Polymarket(
+                        clob::ws::WsMessage::PriceChange(change),
+                    ))
+                    .await?
+            }
+
             other => {
-                anyhow::bail!("other Polymarket message: {:#?}\n", other)
+                tracing::info!("ws message: {other:#?}")
             }
         }
 
@@ -278,7 +301,7 @@ impl MyPolymarketClient {
 
         tracing::info!(
             "starting backfill for polymarket from {}",
-            utils::format_duration_ago(duration)
+            format_duration_ago(duration)
         );
 
         // sports

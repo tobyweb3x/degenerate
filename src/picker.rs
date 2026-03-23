@@ -1,6 +1,9 @@
 use crate::models::{self, protos};
 use crate::platforms;
 use anyhow::{self, Context};
+use kalshi_rs::websocket::models::KalshiSocketMessage;
+use polymarket_hft::client::polymarket::clob;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing;
@@ -9,6 +12,8 @@ pub struct Picker {
     platforms: platforms::Platfroms,
     rx: mpsc::Receiver<protos::ServerEbo>,
     tx: mpsc::Sender<protos::ClientEbo>,
+    ws_rx: mpsc::Receiver<platforms::WsEventMessage>,
+    engine: ArbEngine,
 }
 
 impl Picker {
@@ -16,8 +21,15 @@ impl Picker {
         platforms: platforms::Platfroms,
         rx: mpsc::Receiver<protos::ServerEbo>,
         tx: mpsc::Sender<protos::ClientEbo>,
+        ws_rx: mpsc::Receiver<platforms::WsEventMessage>,
     ) -> Self {
-        Self { platforms, rx, tx }
+        Self {
+            platforms,
+            rx,
+            tx,
+            ws_rx,
+            engine: ArbEngine::new(),
+        }
     }
 
     pub async fn run_picker(&mut self, shutdown: CancellationToken) -> anyhow::Result<()> {
@@ -28,7 +40,29 @@ impl Picker {
                     break;
                 }
 
-                msg = self.rx.recv() => {
+
+                msg = self.ws_rx.recv() => { // from platforms ws
+                     let Some(ev_msg) = msg else {
+                        tracing::info!("got a None instead of todo, picker closed");
+                        break;
+                    };
+
+                    match ev_msg {
+                       platforms::WsEventMessage::Polymarket(data) => {
+                           if let Err(e) = self.handle_poly_messages(data) {
+                            tracing::error!("error from fn handle_poly_messages: {e:#?}");
+                           };
+                        },
+
+                        platforms::WsEventMessage::Kalshi(data) => {
+                            if let Err(e) = self.handle_kalshi_messages(data){
+                                tracing::error!("error from fn handle_kalshi_messages: {e:#?}");
+                            };
+                        },
+                    }
+                },
+
+                msg = self.rx.recv() => { // from grpc server
                     let Some(ebo) = msg else {
                         tracing::info!("got a None instead of todo, picker closed");
                         break;
@@ -39,6 +73,7 @@ impl Picker {
                         continue;
                     };
 
+                    let correlation_id = ebo.correlation_id;
                     match action {
                         protos::server_ebo::Action::CrossPlatformArbDiscovery(list)
                         | protos::server_ebo::Action::IntraPlatformArbDiscovery(list) => {
@@ -47,12 +82,127 @@ impl Picker {
 
                         protos::server_ebo::Action::ConfirmedAndRun(arb ) => {
                             println!("got a ConfirmedAndRun, {arb:#?}");
+                            if let Err(e) = self.find_arb(arb, correlation_id).await {
+                                tracing::error!("error from find_arb: {e:#?}")
+                            }
                         },
                     }
 
                 }
             }
         }
+
+        Ok(())
+    }
+
+    fn handle_poly_messages(&mut self, msg: clob::ws::WsMessage) -> anyhow::Result<()> {
+        match msg {
+            clob::ws::WsMessage::BestBidAsk(best) => {
+                self.engine.on_price_update(
+                    models::make_market_key(&best.asset_id.as_str(), protos::Platform::Polymarket),
+                    models::TopOfBook {
+                        best_bid: models::parse_f32(&best.best_bid)?,
+                        best_ask: models::parse_f32(&best.best_ask)?,
+                        spread: models::parse_f32(&best.spread)?,
+                        timestamp_ms: best
+                            .timestamp
+                            .parse()
+                            .context("erorr parsing timestamp to i64")?,
+                        ..Default::default()
+                    },
+                );
+            }
+            _ => return Ok(()),
+        }
+
+        Ok(())
+    }
+
+    fn handle_kalshi_messages(&mut self, msg: KalshiSocketMessage) -> anyhow::Result<()> {
+        match msg {
+            KalshiSocketMessage::TickerUpdate(ticker) => {
+                self.engine.on_price_update(
+                    models::make_market_key(&ticker.msg.market_ticker, protos::Platform::Kalshi),
+                    models::TopOfBook {
+                        best_bid: models::parse_f32(&ticker.msg.yes_bid_dollars)?,
+                        best_ask: models::parse_f32(&ticker.msg.yes_ask_dollars)?,
+                        bid_size: models::parse_f32(&ticker.msg.yes_bid_size_fp)?,
+                        ask_size: models::parse_f32(&ticker.msg.yes_ask_size_fp)?,
+                        spread: models::parse_f32(&ticker.msg.yes_ask_dollars)?
+                            - models::parse_f32(&ticker.msg.yes_bid_dollars)?,
+                        timestamp_ms: ticker.msg.ts * 1_000,
+                    },
+                );
+            }
+            _ => {
+                return Ok(());
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn find_arb(&mut self, arb: protos::Arb, correlation_id: String) -> anyhow::Result<()> {
+        let (anchor_platform, anchor_token_id) = (
+            arb.anchor
+                .as_ref()
+                .and_then(|a| a.discovery.as_ref())
+                .and_then(|d| d.market_info.as_ref())
+                .and_then(|m| protos::Platform::try_from(m.platform).ok())
+                .context("anchor missing")?,
+            arb.anchor
+                .as_ref()
+                .context("anchor missing")?
+                .token_id
+                .clone(),
+        );
+
+        let (match_platform, match_token_id) = (
+            arb.r#match
+                .as_ref()
+                .and_then(|a| a.discovery.as_ref())
+                .and_then(|d| d.market_info.as_ref())
+                .and_then(|m| protos::Platform::try_from(m.platform).ok())
+                .context("match missing")?,
+            arb.r#match
+                .as_ref()
+                .context("match missing")?
+                .token_id
+                .clone(),
+        );
+
+        let entries = [
+            (anchor_platform, anchor_token_id),
+            (match_platform, match_token_id),
+        ];
+
+        // subscribe to market channel
+        for (platform, token_id) in entries {
+            match platform {
+                protos::Platform::Polymarket => {
+                    self.platforms
+                        .polymarket()
+                        .ws_client()
+                        .subscribe_market(vec![token_id], true)
+                        .await
+                        .context("error subscribing polymarket token_id to ws market channel")?;
+                }
+
+                protos::Platform::Kalshi => {
+                    self.platforms
+                        .kalshi()
+                        .ws_client()
+                        .subscribe(vec!["ticker", "orderbook_delta"], vec![token_id.as_str()])
+                        .await
+                        .context("error subscribing kalshi ticker to ws market channel")?;
+                }
+            }
+        }
+
+        self.engine.register_arb(models::ArbWatch {
+            correlation_id,
+            arb: arb.try_into().context("error creating arbWatch")?,
+        });
 
         Ok(())
     }
@@ -184,5 +334,107 @@ impl Picker {
         };
 
         anyhow::Ok((market.into(), get_leg_token_id(leg)?))
+    }
+}
+
+fn needed_ask_price(tob: &models::TopOfBook, arb: &models::ArbMinifiedInfo) -> f32 {
+    match arb.platform {
+        protos::Platform::Kalshi => match arb.leg {
+            protos::Leg::Left => tob.best_ask,
+            protos::Leg::Right => 1.0 - tob.best_bid,
+        },
+
+        protos::Platform::Polymarket => tob.best_ask,
+    }
+}
+
+pub struct ArbEngine {
+    top_of_book: HashMap<models::MarketKey, models::TopOfBook>,
+    registry: HashMap<models::MarketKey, HashSet<models::correlationID>>,
+    records: HashMap<models::correlationID, models::ArbWatch>,
+}
+
+impl Default for ArbEngine {
+    fn default() -> Self {
+        Self {
+            top_of_book: HashMap::with_capacity(512),
+            registry: HashMap::with_capacity(512),
+            records: HashMap::with_capacity(512),
+        }
+    }
+}
+
+impl ArbEngine {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn register_arb(&mut self, watch: models::ArbWatch) {
+        let cid = watch.correlation_id.clone();
+        let anchor_key = watch.arb.anchor.market_key.clone();
+        let match_key = watch.arb.r#match.market_key.clone();
+
+        self.registry
+            .entry(anchor_key)
+            .or_insert_with(|| HashSet::with_capacity(10))
+            .insert(cid.clone());
+
+        self.registry
+            .entry(match_key)
+            .or_insert_with(|| HashSet::with_capacity(10))
+            .insert(cid.clone());
+
+        self.records.insert(cid, watch);
+    }
+
+    pub fn unregister_arb(&mut self, cid: &models::correlationID) {
+        if let Some(watch) = self.records.remove(cid) {
+            if let Some(set) = self.registry.get_mut(&watch.arb.anchor.market_key) {
+                set.remove(cid);
+            }
+            if let Some(set) = self.registry.get_mut(&watch.arb.r#match.market_key) {
+                set.remove(cid);
+            }
+        }
+    }
+
+    pub fn on_price_update(&mut self, market_key: models::MarketKey, tob: models::TopOfBook) {
+        self.top_of_book.insert(market_key.clone(), tob);
+
+        if let Some(cids) = self.registry.get(&market_key) {
+            for cid in cids {
+                self.evaluate_arb(&cid);
+            }
+        }
+    }
+
+    fn evaluate_arb(&self, cid: &models::correlationID) {
+        let Some(watch) = self.records.get(cid) else {
+            return;
+        };
+
+        let anchor_tob = self.top_of_book.get(watch.arb.anchor.market_key.as_str());
+        let match_tob = self.top_of_book.get(watch.arb.r#match.market_key.as_str());
+
+        if let (Some(a_tob), Some(m_tob)) = (anchor_tob, match_tob) {
+            let anchor_best_ask = needed_ask_price(&a_tob, &watch.arb.anchor);
+            let match_best_ask = needed_ask_price(&m_tob, &watch.arb.r#match);
+
+            let total_cost = anchor_best_ask + match_best_ask;
+
+            if total_cost > 0.0 && total_cost < 0.85 { // or some later threshold
+
+                // let now = chrono::Utc::now().timestamp_millis();
+                // if (a_tob.timestamp_ms - m_tob.timestamp_ms).abs() > 10 * 60 * 1000
+                //     || now - a_tob.timestamp_ms > 30 * 60 * 1000
+                //     || now - m_tob.timestamp_ms > 30 * 60 * 1000
+                // {
+                //     return;
+                // }
+
+                // TODO: Send to Execution Engine (FAK Orders)
+                // execution_tx.send(ExecutionRequest { ... })
+            }
+        }
     }
 }
