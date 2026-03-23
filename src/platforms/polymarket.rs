@@ -5,7 +5,10 @@ use crate::vector_store;
 use alloy::{hex, signers::local::PrivateKeySigner};
 use anyhow::{Context, Result};
 use chrono::{Duration as ChronoDuration, SecondsFormat, Utc};
-use polymarket_hft::client::polymarket::{clob, clob::ws::WsMessage, gamma};
+use polymarket_hft::client::polymarket::{
+    clob::{self, ws::WsMessage},
+    gamma,
+};
 use std::{fs, path::Path, time::Duration};
 use tokio::{sync::mpsc, task::JoinSet};
 use tokio_util::sync::CancellationToken;
@@ -18,6 +21,7 @@ pub struct MyPolymarketClient {
     clob_ws_client: clob::ws::ClobWsClient,
     qdrant_client: vector_store::VectorStore,
     ws_tx: mpsc::Sender<WsEventMessage>,
+    order_book_http: clob::Client,
 }
 
 impl MyPolymarketClient {
@@ -30,7 +34,15 @@ impl MyPolymarketClient {
             clob_ws_client: clob::ws::ClobWsClient::new(),
             qdrant_client,
             ws_tx,
+            order_book_http: clob::Client::new(),
         }
+    }
+
+    pub async fn get_order_book(&self, token_id: &str) -> anyhow::Result<clob::OrderBookSummary> {
+        self.order_book_http
+            .get_order_book(token_id)
+            .await
+            .map_err(anyhow::Error::from)
     }
 
     pub fn gamma_client(&self) -> &gamma::Client {

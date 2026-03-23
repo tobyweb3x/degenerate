@@ -1,3 +1,4 @@
+use crate::execution;
 use crate::grpc;
 use crate::picker;
 use crate::platforms;
@@ -39,19 +40,30 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
     let mut polymarket_client =
         platforms::polymarket::MyPolymarketClient::new(polymarket_vs, ws_tx.clone());
 
-    let platforms = platforms::Platfroms::new(kalshi_client.clone(), polymarket_client.clone());
+    let platform =
+        platforms::Platfroms::new(kalshi_client.clone(), polymarket_client.clone()).clone();
+    let platform_for_picker_comms = platform.clone();
+    let (execution_tx, execution_rx) = mpsc::channel(512);
 
-    // picker
-    let picker_shutdown = shutdown.clone();
+    // picker exec
+    let picker_comms_shutdown = shutdown.clone();
     let clone_bot_to_grpc_tx = bot_to_grpc_tx.clone();
-    let picker_handle = tokio::spawn(async move {
-        let mut picker = picker::Picker::new(
-            platforms,
+    let picker_comms_handle = tokio::spawn(async move {
+        let mut picker = picker::comms::PickerComms::new(
+            platform_for_picker_comms,
             grpc_to_bot_rx,
             clone_bot_to_grpc_tx,
             ws_rx,
+            execution_tx,
         );
-        picker.run_picker(picker_shutdown).await
+        picker.run_picker_comms(picker_comms_shutdown).await
+    });
+
+    // picker exec
+    let picker_exce_shutdown = shutdown.clone();
+    let picker_exec_handle = tokio::spawn(async move {
+        let mut picker = picker::exec::PickerExec::new(platform, execution_rx);
+        picker.run_picker_exe(picker_exce_shutdown).await
     });
 
     // grpc client
@@ -103,7 +115,8 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
     Ok(OponIfa {
         kalshi_handle,
         polymarket_handle,
-        picker_handle,
+        picker_comms_handle,
+        picker_exec_handle,
         grpc_handle,
     })
 }
@@ -111,6 +124,7 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
 pub struct OponIfa {
     pub kalshi_handle: JoinHandle<Result<()>>,
     pub polymarket_handle: JoinHandle<Result<()>>,
-    pub picker_handle: JoinHandle<Result<()>>,
+    pub picker_comms_handle: JoinHandle<Result<()>>,
+    pub picker_exec_handle: JoinHandle<Result<()>>,
     pub grpc_handle: JoinHandle<Result<()>>,
 }

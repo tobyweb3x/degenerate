@@ -4,6 +4,7 @@ use kalshi_rs::websocket::models::KalshiSocketMessage;
 use polymarket_hft::client::polymarket::clob;
 use std::{sync::Arc, time::Duration};
 
+#[derive(Clone)]
 pub struct Platfroms {
     kalshi: Arc<kalshi::MyKalshiClient>,
     polymarket: Arc<polymarket::MyPolymarketClient>,

@@ -5,12 +5,12 @@ use tracing_subscriber;
 use tracing_subscriber::{EnvFilter, fmt};
 
 mod app;
+mod execution;
 mod grpc;
 mod models;
 mod picker;
 mod platforms;
 mod vector_store;
-mod execution;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -49,7 +49,8 @@ async fn main() -> Result<()> {
                 flatten(app_runtime.polymarket_handle),
                 flatten(app_runtime.kalshi_handle),
                 flatten(app_runtime.grpc_handle),
-                flatten(app_runtime.picker_handle)
+                flatten(app_runtime.picker_comms_handle),
+                flatten(app_runtime.picker_exec_handle)
             )
         } => {
             match res {

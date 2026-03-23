@@ -595,3 +595,12 @@ impl TryFrom<protos::Arb> for ArbMinifiedInfoPair {
         })
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct ExecutionRequest {
+    pub correlation_id: String,
+    pub anchor: ArbMinifiedInfo,
+    pub r#match: ArbMinifiedInfo,
+    pub anchor_price: f32,
+    pub match_price: f32,
+}
