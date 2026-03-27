@@ -1,8 +1,6 @@
-use crate::models::{self, protos};
-
 pub mod comms {
     use crate::{
-        models::{self, protos},
+        models::{self, make_market_key, protos},
         platforms,
     };
     use anyhow::{self, Context};
@@ -17,8 +15,8 @@ pub mod comms {
 
         pub(super) struct Book {
             pub top_of_book: HashMap<super::models::MarketKey, super::models::TopOfBook>,
-            pub registry: HashMap<super::models::MarketKey, HashSet<super::models::correlationID>>,
-            pub records: HashMap<super::models::correlationID, super::models::ArbWatch>,
+            pub registry: HashMap<super::models::MarketKey, HashSet<super::models::CorrelationId>>,
+            pub records: HashMap<super::models::CorrelationId, super::models::ArbWatch>,
         }
 
         impl Default for Book {
@@ -119,7 +117,7 @@ pub mod comms {
                             },
 
                             protos::server_ebo::Action::ConfirmedAndRun(arb ) => {
-                                println!("got a ConfirmedAndRun, {arb:#?}");
+                                println!("got a ConfirmedAndRun");
                                 if let Err(e) = self.find_arb(arb, correlation_id).await {
                                     tracing::error!("error from find_arb: {e:#?}")
                                 }
@@ -191,7 +189,7 @@ pub mod comms {
                         self.platforms
                             .kalshi()
                             .ws_client()
-                            .subscribe(vec!["ticker", "orderbook_delta"], vec![token_id.as_str()])
+                            .subscribe(vec!["ticker"], vec![token_id.as_str()])
                             .await
                             .context("error subscribing kalshi ticker to ws market channel")?;
                     }
@@ -351,7 +349,7 @@ pub mod comms {
                             best_bid: models::parse_f32(&best.best_bid)?,
                             best_ask: models::parse_f32(&best.best_ask)?,
                             spread: models::parse_f32(&best.spread)?,
-                            timestamp_ms: best
+                            tob_timestamp_ms: best
                                 .timestamp
                                 .parse()
                                 .context("erorr parsing timestamp to i64")?,
@@ -359,6 +357,25 @@ pub mod comms {
                         },
                     );
                 }
+
+                clob::ws::WsMessage::MarketResolved(resolve) => {
+                    // TODO: try resolve wins from here if possible
+
+                    println!("we got a polymarket resolve: {resolve:#?}");
+                    for asset_id in resolve.asset_ids {
+                        let market_key = make_market_key(&asset_id, protos::Platform::Polymarket);
+
+                        let cids = match self.book.registry.get(&market_key) {
+                            Some(set) => set.clone(),
+                            None => continue,
+                        };
+
+                        for cid in cids {
+                            self.unregister_arb(&cid);
+                        }
+                    }
+                }
+
                 _ => return Ok(()),
             }
 
@@ -380,43 +397,137 @@ pub mod comms {
                             ask_size: models::parse_f32(&ticker.msg.yes_ask_size_fp)?,
                             spread: models::parse_f32(&ticker.msg.yes_ask_dollars)?
                                 - models::parse_f32(&ticker.msg.yes_bid_dollars)?,
-                            timestamp_ms: ticker.msg.ts * 1_000,
+                            tob_timestamp_ms: ticker.msg.ts * 1_000,
+                            sid: Some(ticker.sid),
                         },
                     );
                 }
+
+                KalshiSocketMessage::MarketLifecycleV2(event) => {
+                    // TODO: try resolve wins from here if possible
+                    println!("we got a kalshi resolve: {event:#?}");
+
+                    let market_key =
+                        make_market_key(&event.msg.market_ticker, protos::Platform::Kalshi);
+
+                    let Some(set) = self.book.registry.get(&market_key) else {
+                        return Ok(());
+                    };
+                    let cids = set.clone();
+
+                    for cid in cids {
+                        let event_type = event.msg.event_type.as_str();
+                        if event_type == "close_date_updated" {
+                            let Some(arb) = self.book.records.get_mut(&cid) else {
+                                continue;
+                            };
+
+                            let Some(new_close_time) = event.msg.close_ts else {
+                                continue;
+                            };
+
+                            if arb.arb.anchor.market_key == market_key {
+                                arb.arb.anchor.close_time_ms = new_close_time * 1_000;
+                            }
+
+                            if arb.arb.r#match.market_key == market_key {
+                                arb.arb.r#match.close_time_ms = new_close_time * 1_000;
+                            }
+                        } else if event_type == "determined"
+                            || event_type == "settled"
+                            || event_type == "deactivated"
+                        {
+                            self.unregister_arb(&cid);
+                        }
+                    }
+                }
+
                 _ => {
                     return Ok(());
                 }
             }
             Ok(())
         }
-        pub fn register_arb(&mut self, watch: models::ArbWatch) {
+
+        fn register_arb(&mut self, watch: models::ArbWatch) {
             let cid = watch.correlation_id.clone();
-            let anchor_key = watch.arb.anchor.market_key.clone();
-            let match_key = watch.arb.r#match.market_key.clone();
+            let anchor_market_key = watch.arb.anchor.market_key.clone();
+            let match_market_key = watch.arb.r#match.market_key.clone();
 
             self.book
                 .registry
-                .entry(anchor_key)
+                .entry(anchor_market_key)
                 .or_insert_with(|| HashSet::with_capacity(10))
                 .insert(cid.clone());
 
             self.book
                 .registry
-                .entry(match_key)
+                .entry(match_market_key)
                 .or_insert_with(|| HashSet::with_capacity(10))
                 .insert(cid.clone());
 
             self.book.records.insert(cid, watch);
         }
 
-        pub fn unregister_arb(&mut self, cid: &models::correlationID) {
+        fn unregister_arb(&mut self, cid: &models::CorrelationId) {
             if let Some(watch) = self.book.records.remove(cid) {
-                if let Some(set) = self.book.registry.get_mut(&watch.arb.anchor.market_key) {
-                    set.remove(cid);
-                }
-                if let Some(set) = self.book.registry.get_mut(&watch.arb.r#match.market_key) {
-                    set.remove(cid);
+                for key in [&watch.arb.anchor, &watch.arb.r#match] {
+                    let should_remove =
+                        if let Some(set) = self.book.registry.get_mut(key.market_key.as_str()) {
+                            set.remove(cid);
+                            set.is_empty()
+                        } else {
+                            false
+                        };
+
+                    if should_remove {
+                        self.book.registry.remove(key.market_key.as_str());
+                        let deleted_tob = self.book.top_of_book.remove(key.market_key.as_str());
+
+                        // ✅ extract owned data BEFORE spawn
+                        let platform = key.platform;
+                        let market_id = key.market_id.clone();
+                        let token_id = key.token_id.clone();
+
+                        let sid = deleted_tob.and_then(|t| t.sid);
+
+                        // ✅ clone clients (must be Arc or cheap clone)
+                        let kalshi = self.platforms.kalshi().ws_client().clone();
+                        let polymarket = self.platforms.polymarket().ws_client().clone();
+
+                        tokio::spawn(async move {
+                            match platform {
+                                protos::Platform::Kalshi => {
+                                    if let Some(sid) = sid {
+                                        if let Err(e) = kalshi.unsubscribe(vec![sid as u64]).await {
+                                            tracing::error!(
+                                                "Failed background unsubscribe for Kalshi SID {}: {}",
+                                                sid,
+                                                e
+                                            );
+                                        }
+                                    } else {
+                                        tracing::debug!(
+                                            "Skipping Kalshi unsubscribe for {}: No SID found.",
+                                            market_id
+                                        );
+                                    }
+                                }
+
+                                protos::Platform::Polymarket => {
+                                    if let Err(e) = polymarket
+                                        .unsubscribe_assets_from_market_channel(vec![token_id])
+                                        .await
+                                    {
+                                        tracing::error!(
+                                            "Failed background unsubscribe for Polymarket: {}",
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                        });
+                    }
                 }
             }
         }
@@ -431,7 +542,7 @@ pub mod comms {
             }
         }
 
-        fn evaluate_arb(&self, cid: &models::correlationID) {
+        fn evaluate_arb(&self, cid: &models::CorrelationId) {
             let Some(watch) = self.book.records.get(cid) else {
                 return;
             };
@@ -492,7 +603,6 @@ pub mod exec {
         platforms,
     };
     use anyhow::{self, Context};
-    use polymarket_hft::client::polymarket::clob::{self};
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
     use tracing;
@@ -526,8 +636,11 @@ pub mod exec {
                             tracing::info!("got a None instead of todo, picker_executions closed");
                             break;
                         };
-                    }
 
+                        if let Err(e) = self.handle_execution_request(ev_msg).await {
+                            tracing::error!("err from handle_execution_request: {e:#?}");
+                        }
+                    }
                 }
             }
             Ok(())
@@ -671,87 +784,87 @@ pub mod exec {
             }
         }
 
-        /// Simulates walking two order books to find the maximum profitable arbitrage size.
-        ///
-        /// * `anchor_asks`: The list of available asks for Leg 1 (sorted lowest price to highest)
-        /// * `match_asks`: The list of available asks for Leg 2 (sorted lowest price to highest)
-        /// * `max_cost`: The maximum combined price you are willing to pay (e.g., 0.985)
-        ///
-        /// Returns: (Total Contracts to Buy, Total Cost per Contract, Total Capital Required)
-        pub fn walk_books(
-            mut anchor_asks: Vec<PriceLevel>,
-            mut match_asks: Vec<PriceLevel>,
-            max_cost_threshold: f32,
-        ) -> Option<(f32, f32, f32)> {
-            let mut total_contracts = 0.0;
-            let mut total_capital_spent = 0.0;
+        // Simulates walking two order books to find the maximum profitable arbitrage size.
+        //
+        // * `anchor_asks`: The list of available asks for Leg 1 (sorted lowest price to highest)
+        // * `match_asks`: The list of available asks for Leg 2 (sorted lowest price to highest)
+        // * `max_cost`: The maximum combined price you are willing to pay (e.g., 0.985)
+        //
+        // Returns: (Total Contracts to Buy, Total Cost per Contract, Total Capital Required)
+        // pub fn walk_books(
+        //     mut anchor_asks: Vec<PriceLevel>,
+        //     mut match_asks: Vec<PriceLevel>,
+        //     max_cost_threshold: f32,
+        // ) -> Option<(f32, f32, f32)> {
+        //     let mut total_contracts = 0.0;
+        //     let mut total_capital_spent = 0.0;
 
-            // Use pointers to track which level we are currently eating
-            let mut anchor_idx = 0;
-            let mut match_idx = 0;
+        //     // Use pointers to track which level we are currently eating
+        //     let mut anchor_idx = 0;
+        //     let mut match_idx = 0;
 
-            // Keep looping as long as we have levels left on BOTH exchanges
-            while anchor_idx < anchor_asks.len() && match_idx < match_asks.len() {
-                let a_level = &mut anchor_asks[anchor_idx];
-                let m_level = &mut match_asks[match_idx];
+        //     // Keep looping as long as we have levels left on BOTH exchanges
+        //     while anchor_idx < anchor_asks.len() && match_idx < match_asks.len() {
+        //         let a_level = &mut anchor_asks[anchor_idx];
+        //         let m_level = &mut match_asks[match_idx];
 
-                // 1. Check Profitability
-                let current_cost = a_level.price + m_level.price;
+        //         // 1. Check Profitability
+        //         let current_cost = a_level.price + m_level.price;
 
-                // If the current combination of levels is too expensive, we stop walking.
-                if current_cost >= max_cost_threshold {
-                    break;
-                }
+        //         // If the current combination of levels is too expensive, we stop walking.
+        //         if current_cost >= max_cost_threshold {
+        //             break;
+        //         }
 
-                // 2. Determine Executable Size
-                // We can only buy as much as the weakest link at this specific price level
-                let matched_size = a_level.size.min(m_level.size);
+        //         // 2. Determine Executable Size
+        //         // We can only buy as much as the weakest link at this specific price level
+        //         let matched_size = a_level.size.min(m_level.size);
 
-                if matched_size < 1.0 {
-                    // Move past dust
-                    if a_level.size < 1.0 {
-                        anchor_idx += 1;
-                    }
-                    if m_level.size < 1.0 {
-                        match_idx += 1;
-                    }
-                    continue;
-                }
+        //         if matched_size < 1.0 {
+        //             // Move past dust
+        //             if a_level.size < 1.0 {
+        //                 anchor_idx += 1;
+        //             }
+        //             if m_level.size < 1.0 {
+        //                 match_idx += 1;
+        //             }
+        //             continue;
+        //         }
 
-                // 3. "Execute" the simulated trade
-                total_contracts += matched_size;
-                total_capital_spent += matched_size * current_cost;
+        //         // 3. "Execute" the simulated trade
+        //         total_contracts += matched_size;
+        //         total_capital_spent += matched_size * current_cost;
 
-                // 4. Deplete the sizes from the current levels
-                a_level.size -= matched_size;
-                m_level.size -= matched_size;
+        //         // 4. Deplete the sizes from the current levels
+        //         a_level.size -= matched_size;
+        //         m_level.size -= matched_size;
 
-                // 5. Advance the pointers if a level is completely eaten
-                if a_level.size <= 0.001 {
-                    anchor_idx += 1;
-                }
-                if m_level.size <= 0.001 {
-                    match_idx += 1;
-                }
-            }
+        //         // 5. Advance the pointers if a level is completely eaten
+        //         if a_level.size <= 0.001 {
+        //             anchor_idx += 1;
+        //         }
+        //         if m_level.size <= 0.001 {
+        //             match_idx += 1;
+        //         }
+        //     }
 
-            if total_contracts < 1.0 {
-                return None; // No meaningful arb found
-            }
+        //     if total_contracts < 1.0 {
+        //         return None; // No meaningful arb found
+        //     }
 
-            let average_cost_per_contract = total_capital_spent / total_contracts;
+        //     let average_cost_per_contract = total_capital_spent / total_contracts;
 
-            Some((
-                total_contracts,
-                average_cost_per_contract,
-                total_capital_spent,
-            ))
-        }
+        //     Some((
+        //         total_contracts,
+        //         average_cost_per_contract,
+        //         total_capital_spent,
+        //     ))
+        // }
     }
 
-    #[derive(Debug, Clone)]
-    pub struct PriceLevel {
-        pub price: f32,
-        pub size: f32,
-    }
+    // #[derive(Debug, Clone)]
+    // pub struct PriceLevel {
+    //     pub price: f32,
+    //     pub size: f32,
+    // }
 }

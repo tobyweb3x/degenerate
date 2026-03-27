@@ -28,7 +28,8 @@ INSERT INTO similarity_hits (
 -- name: GetSimilarityHitByCorrelationID :one
 SELECT *
 FROM similarity_hits
-WHERE correlation_id = $1;
+WHERE correlation_id = $1 
+    AND is_deleted = FALSE;
 
 -- name: GetArbByCorrelationID :one
 SELECT *
@@ -39,6 +40,7 @@ WHERE correlation_id = $1;
 SELECT *
 FROM similarity_hits
 WHERE arb_type = 'cross'
+  AND is_deleted = FALSE
 ORDER BY created_at DESC
 LIMIT $1;
 
@@ -53,6 +55,7 @@ LIMIT $1;
 SELECT *
 FROM similarity_hits
 WHERE arb_type = 'intra'
+    AND is_deleted = FALSE
 ORDER BY created_at DESC
 LIMIT $1;
 
@@ -64,7 +67,9 @@ ORDER BY created_at DESC
 LIMIT $1;
 
 -- name: DeleteSimilarityHit :exec
-DELETE FROM similarity_hits
+UPDATE similarity_hits
+SET is_deleted = TRUE,
+    deleted_at = NOW()
 WHERE correlation_id = $1;
 
 -- name: DeleteArb :exec
@@ -87,3 +92,7 @@ SET confirmed = $2,
     running = $3
 WHERE correlation_id = $1
 RETURNING *;
+
+-- name: HardDeleteOldSimilarityHits :exec
+DELETE FROM similarity_hits
+WHERE is_deleted = TRUE AND deleted_at < $1;

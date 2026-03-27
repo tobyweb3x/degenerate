@@ -21,12 +21,12 @@ use tokio::{sync::mpsc, task};
 
 pub const COLLECTION_NAME: &str = "Aroni";
 
-// Payload Field Names
+// Payload indexed Field Names
 pub const FIELD_UUID: &str = "market_info.uuid";
 pub const FIELD_MARKET_CATEGORY: &str = "market_info.market_category";
 pub const FIELD_PLATFORM: &str = "market_info.platform";
 pub const FIELD_MARKET_SUBCATEGORY: &str = "market_info.market_subcategory";
-pub const FIELD_END_DATE: &str = "market_info.end_date";
+pub const FIELD_CLOSE_TIME_MS: &str = "market_info.close_time_ms";
 pub const FIELD_INSERTED_AT: &str = "qdrant_inserted_at";
 
 pub const SIMILARITY_SCORE_THRESHOLD: f32 = 0.65;
@@ -75,7 +75,7 @@ impl VectorStore {
                 .context("error creating new qdrant collection")?;
         }
 
-        let model = SentenceTransformerBuilder::with_sentence_transformer(&Which::AllMiniLML6v2)
+        let model = SentenceTransformerBuilder::with_sentence_transformer(&Which::AllMiniLML12v2)
             .batch_size(2048)
             .with_device(&device)
             .build()
@@ -156,9 +156,9 @@ impl VectorStore {
             .await
             .context(format!("qdrant index error on {}", FIELD_MARKET_CATEGORY))?;
 
-        self.index_payload(FIELD_END_DATE, FieldType::Datetime)
+        self.index_payload(FIELD_CLOSE_TIME_MS, FieldType::Integer)
             .await
-            .context(format!("qdrant index error on {}", FIELD_END_DATE))?;
+            .context(format!("qdrant index error on {}", FIELD_CLOSE_TIME_MS))?;
 
         self.index_payload(FIELD_INSERTED_AT, FieldType::Integer) // Changed
             .await

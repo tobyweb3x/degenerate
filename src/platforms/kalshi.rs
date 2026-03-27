@@ -72,11 +72,11 @@ impl MyKalshiClient {
             .subscribe(vec!["market_lifecycle_v2"], vec![])
             .await?;
 
-        let duration = Duration::from_mins(6);
-        let mut six_minute_ticker = tokio::time::interval(duration);
+        let duration = Duration::from_mins(20);
+        let mut twenty_mins_ticker = tokio::time::interval(duration);
         let mut ws_is_alive = true;
 
-        six_minute_ticker.tick().await; // fires first tick
+        twenty_mins_ticker.tick().await; // fires first tick
         loop {
             tokio::select! {
                   _ = shutdown.cancelled() => {
@@ -85,7 +85,7 @@ impl MyKalshiClient {
                         break;
                   }
 
-                _ = six_minute_ticker.tick() => {
+                _ = twenty_mins_ticker.tick() => {
                     println!("kalshi six min triggers");
                         let _ = self.backfill_kalshi_sport_history(duration, CancellationToken::new()).await
                         .inspect_err(|e|  tracing::error!("error handling kalshi msg(backfill): {e:?}"));
@@ -120,12 +120,60 @@ impl MyKalshiClient {
 
     async fn handle_kalshi_wss_message(&self, msg: KalshiSocketMessage) -> Result<()> {
         match msg {
-            KalshiSocketMessage::SubscribedResponse(res) => {
-                tracing::info!("Subscribed: {:#?}", res);
-            }
+            // !!: this does not make sense no more, let just poll, new market is def. illiquid
+            KalshiSocketMessage::MarketLifecycleV2(event) => {
+                if matches!(event.msg.event_type.as_str(), "created" | "activated") {
+                    let Ok(value) = self
+                        .http_client
+                        .get_market(event.msg.market_ticker.as_str())
+                        .await
+                    else {
+                        return Ok(());
+                    };
 
-            KalshiSocketMessage::OkResponse(res) => {
-                tracing::info!("OK response: {:#?}", res);
+                    let event = self
+                        .http_client
+                        .get_event(value.market.event_ticker.as_str())
+                        .await?;
+
+                    let series = self
+                        .http_client
+                        .get_series_by_ticker(event.event.series_ticker.as_str())
+                        .await?;
+
+                    let Some(market) = Self::sort_kalshi_tags(series.series) else {
+                        return Ok(());
+                    };
+
+                    let qdrant_payload = protos::QdrantPayload::from_market(
+                        value.market,
+                        market.info().market_category,
+                        market.info().market_subcategory,
+                    );
+
+                    self.qdrant_client
+                        .search_and_insert(
+                            qdrant_payload,
+                            vector_store::SIMILARITY_SCORE_THRESHOLD,
+                            vector_store::VectorStore::create_cross_platform_filter(
+                                Some(protos::Platform::Kalshi),
+                                &market,
+                            ),
+                        )
+                        .await?;
+                    return Ok(());
+                }
+
+                if matches!(
+                    event.msg.event_type.as_str(),
+                    "deactivated" | "close_date_updated" | "determined" | "settled"
+                ) {
+                    self.ws_tx
+                        .send(WsEventMessage::Kalshi(
+                            KalshiSocketMessage::MarketLifecycleV2(event),
+                        ))
+                        .await?;
+                }
             }
 
             KalshiSocketMessage::Ping(payload) => self
@@ -134,67 +182,11 @@ impl MyKalshiClient {
                 .await
                 .context("error sending pong(kalshi)")?,
 
-            KalshiSocketMessage::OrderbookDelta(delta) => {
-                self.ws_tx
-                    .send(WsEventMessage::Kalshi(KalshiSocketMessage::OrderbookDelta(
-                        delta,
-                    )))
-                    .await?
-            }
-
             KalshiSocketMessage::TickerUpdate(ticker) => {
                 self.ws_tx
                     .send(WsEventMessage::Kalshi(KalshiSocketMessage::TickerUpdate(
                         ticker,
                     )))
-                    .await?
-            }
-
-            KalshiSocketMessage::MarketLifecycleV2(event) => {
-                if matches!(
-                    event.msg.event_type.as_str(),
-                    "settled" | "determined" | "close_date_updated" | "deactivated"
-                ) {
-                    return Ok(());
-                }
-
-                let Ok(value) = self
-                    .http_client
-                    .get_market(event.msg.market_ticker.as_str())
-                    .await
-                else {
-                    return Ok(());
-                };
-
-                let event = self
-                    .http_client
-                    .get_event(value.market.event_ticker.as_str())
-                    .await?;
-
-                let series = self
-                    .http_client
-                    .get_series_by_ticker(event.event.series_ticker.as_str())
-                    .await?;
-
-                let Some(market) = Self::sort_kalshi_tags(series.series) else {
-                    return Ok(());
-                };
-
-                let qdrant_payload = protos::QdrantPayload::from_market(
-                    value.market,
-                    market.info().market_category,
-                    market.info().market_subcategory,
-                );
-
-                self.qdrant_client
-                    .search_and_insert(
-                        qdrant_payload,
-                        vector_store::SIMILARITY_SCORE_THRESHOLD,
-                        vector_store::VectorStore::create_cross_platform_filter(
-                            Some(protos::Platform::Kalshi),
-                            &market,
-                        ),
-                    )
                     .await?
             }
 
@@ -207,13 +199,10 @@ impl MyKalshiClient {
                 {
                     return Ok(());
                 }
-
                 tracing::error!("Kalshi error {}: {}", err.msg.code, err.msg.msg);
             }
 
-            others => {
-                tracing::info!("others from kalshi: {:#?}", others);
-            }
+            _ => {}
         }
 
         Ok(())

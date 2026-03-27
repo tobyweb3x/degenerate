@@ -24,8 +24,8 @@ message MarketInfo {
     string rules = 5;
     string market_category = 6;
     string market_subcategory = 7;
-    Platform platform = 8;
-    string end_date = 9;
+    int64 close_time_ms = 8;
+    Platform platform = 9;
 }
 
 message QdrantPayload {

@@ -32,7 +32,7 @@ func (a *App) Routes() *chi.Mux {
 	r.Get("/hits", a.similarityHitsPage)
 	r.Get("/arbs", a.arbsPage)
 
-	r.Post("/delete/hit/{correlationId}", a.deleteHit)
+	r.Post("/delete/hit/{correlationId}", a.softDeleteHit)
 	r.Post("/delete/arb/{correlationId}", a.deleteArb)
 
 	r.Get("/market/json/{platform}/{ticker}", a.getMarket)

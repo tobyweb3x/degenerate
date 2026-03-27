@@ -108,7 +108,7 @@ func (r *Repository) BulkInsertSimilarityHits(ctx context.Context, bulk ...postg
 	return r.dbQuery.BulkInsertSimilarityHits(ctx, bulk)
 }
 
-func (r *Repository) DeleteSimilarityHit(ctx context.Context, correlationID string) error {
+func (r *Repository) SoftDeleteSimilarityHit(ctx context.Context, correlationID string) error {
 	return r.dbQuery.DeleteSimilarityHit(ctx, correlationID)
 }
 
@@ -135,5 +135,12 @@ func (r *Repository) UpdateArbStatus(ctx context.Context, correlationID string) 
 		CorrelationID: correlationID,
 		Confirmed:     true,
 		Running:       true,
+	})
+}
+
+func (r *Repository) HardDeleteHit(ctx context.Context, deletedAt time.Time) error {
+	return r.dbQuery.HardDeleteOldSimilarityHits(ctx, pgtype.Timestamptz{
+		Time:  deletedAt,
+		Valid: true,
 	})
 }

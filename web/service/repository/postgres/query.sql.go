@@ -29,7 +29,9 @@ func (q *Queries) DeleteArb(ctx context.Context, correlationID string) error {
 }
 
 const deleteSimilarityHit = `-- name: DeleteSimilarityHit :exec
-DELETE FROM similarity_hits
+UPDATE similarity_hits
+SET is_deleted = TRUE,
+    deleted_at = NOW()
 WHERE correlation_id = $1
 `
 
@@ -98,9 +100,10 @@ func (q *Queries) GetRecentCrossArbs(ctx context.Context, limit int32) ([]Arb, e
 }
 
 const getRecentCrossHits = `-- name: GetRecentCrossHits :many
-SELECT id, correlation_id, found_at, similarity_hit, arb_type, created_at
+SELECT id, correlation_id, found_at, similarity_hit, arb_type, is_deleted, deleted_at, created_at
 FROM similarity_hits
 WHERE arb_type = 'cross'
+  AND is_deleted = FALSE
 ORDER BY created_at DESC
 LIMIT $1
 `
@@ -120,6 +123,8 @@ func (q *Queries) GetRecentCrossHits(ctx context.Context, limit int32) ([]Simila
 			&i.FoundAt,
 			&i.SimilarityHit,
 			&i.ArbType,
+			&i.IsDeleted,
+			&i.DeletedAt,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -170,9 +175,10 @@ func (q *Queries) GetRecentIntraArbs(ctx context.Context, limit int32) ([]Arb, e
 }
 
 const getRecentIntraHits = `-- name: GetRecentIntraHits :many
-SELECT id, correlation_id, found_at, similarity_hit, arb_type, created_at
+SELECT id, correlation_id, found_at, similarity_hit, arb_type, is_deleted, deleted_at, created_at
 FROM similarity_hits
 WHERE arb_type = 'intra'
+    AND is_deleted = FALSE
 ORDER BY created_at DESC
 LIMIT $1
 `
@@ -192,6 +198,8 @@ func (q *Queries) GetRecentIntraHits(ctx context.Context, limit int32) ([]Simila
 			&i.FoundAt,
 			&i.SimilarityHit,
 			&i.ArbType,
+			&i.IsDeleted,
+			&i.DeletedAt,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -205,9 +213,10 @@ func (q *Queries) GetRecentIntraHits(ctx context.Context, limit int32) ([]Simila
 }
 
 const getSimilarityHitByCorrelationID = `-- name: GetSimilarityHitByCorrelationID :one
-SELECT id, correlation_id, found_at, similarity_hit, arb_type, created_at
+SELECT id, correlation_id, found_at, similarity_hit, arb_type, is_deleted, deleted_at, created_at
 FROM similarity_hits
-WHERE correlation_id = $1
+WHERE correlation_id = $1 
+    AND is_deleted = FALSE
 `
 
 func (q *Queries) GetSimilarityHitByCorrelationID(ctx context.Context, correlationID string) (SimilarityHit, error) {
@@ -219,9 +228,21 @@ func (q *Queries) GetSimilarityHitByCorrelationID(ctx context.Context, correlati
 		&i.FoundAt,
 		&i.SimilarityHit,
 		&i.ArbType,
+		&i.IsDeleted,
+		&i.DeletedAt,
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const hardDeleteOldSimilarityHits = `-- name: HardDeleteOldSimilarityHits :exec
+DELETE FROM similarity_hits
+WHERE is_deleted = TRUE AND deleted_at < $1
+`
+
+func (q *Queries) HardDeleteOldSimilarityHits(ctx context.Context, deletedAt pgtype.Timestamptz) error {
+	_, err := q.db.Exec(ctx, hardDeleteOldSimilarityHits, deletedAt)
+	return err
 }
 
 const insertNewArb = `-- name: InsertNewArb :exec

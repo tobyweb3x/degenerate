@@ -1,9 +1,12 @@
 package backend
 
 import (
+	"context"
 	"crypto/rsa"
+	"log"
 	"net/http"
 	"net/url"
+	"time"
 	"web/protos"
 	"web/service/repository"
 
@@ -46,4 +49,34 @@ func NewApp(conn *pgxpool.Pool, configs *EnvConfig) (*App, error) {
 
 func (a *App) closeGrpcComms() {
 	close(a.GrpcComms)
+}
+
+func (a *App) CleanOldHitFromDbCron(ctx context.Context, deleteFrom time.Time) {
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+
+	run := func(deleteFrom time.Time) {
+		log.Println("🧹 Running daily database cleanup...")
+		err := a.db.HardDeleteHit(ctx, deleteFrom)
+		if err != nil {
+			log.Printf("Error cleaning database: %v", err)
+			return
+		}
+
+		log.Println("✅ Database cleanup successful")
+	}
+
+	run(deleteFrom)
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("Stopping DB cleanup cron")
+			return
+
+		case <-ticker.C:
+			run(deleteFrom)
+			
+		}
+	}
 }

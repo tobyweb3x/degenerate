@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS similarity_hits (
     found_at TIMESTAMPTZ NOT NULL,
     similarity_hit JSONB NOT NULL,
     arb_type TEXT NOT NULL CHECK (arb_type IN ('cross', 'intra')),
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

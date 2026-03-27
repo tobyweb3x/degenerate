@@ -58,11 +58,11 @@ impl MyPolymarketClient {
 
         self.clob_ws_client.subscribe_market(vec![], true).await?;
 
-        let duration = Duration::from_mins(5);
-        let mut five_minute_ticker = tokio::time::interval(duration);
+        let duration = Duration::from_mins(25);
+        let mut twenty_five_minute_ticker = tokio::time::interval(duration);
         let mut ws_is_alive = true;
 
-        five_minute_ticker.tick().await; // fires first tick
+        twenty_five_minute_ticker.tick().await; // fires first tick
         loop {
             tokio::select! {
                 biased;
@@ -72,7 +72,7 @@ impl MyPolymarketClient {
                     break;
                 }
 
-                _ = five_minute_ticker.tick() => {
+                _ = twenty_five_minute_ticker.tick() => {
                     println!("polymarket five min triggers");
                     let _ = self.backfill_polymarket_sport_history(duration, CancellationToken::new()).await
                     .inspect_err(|e| tracing::error!("error handling polymarket msg(backfill): {e:?}"));
@@ -97,6 +97,7 @@ impl MyPolymarketClient {
 
     async fn handle_polymarket_wss_message(&self, msg: WsMessage) -> Result<()> {
         match msg {
+            // !!: this does not make sense no more, let just poll, new market is def. illiquid
             clob::ws::WsMessage::NewMarket(msg) => {
                 let value = self
                     .gamma_client
@@ -138,17 +139,15 @@ impl MyPolymarketClient {
                     .await?
             }
 
-            clob::ws::WsMessage::PriceChange(change) => {
+            clob::ws::WsMessage::MarketResolved(resolved) => {
                 self.ws_tx
                     .send(WsEventMessage::Polymarket(
-                        clob::ws::WsMessage::PriceChange(change),
+                        clob::ws::WsMessage::MarketResolved(resolved),
                     ))
                     .await?
             }
 
-            other => {
-                tracing::info!("ws message: {other:#?}")
-            }
+            _ => {}
         }
 
         Ok(())

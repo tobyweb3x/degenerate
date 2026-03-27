@@ -87,11 +87,16 @@ func main() {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
+	twoWeeksAgo := time.Now().AddDate(0, 0, -14)
+	ctx, cancel := context.WithCancel(context.Background())
+	go app.CleanOldHitFromDbCron(ctx, twoWeeksAgo)
+
 	<-done
+	cancel()
 	grpcServer.GracefulStop()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
+	shutdownCancel()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("graceful server shutdown Failed: %s", err.Error())
 	}

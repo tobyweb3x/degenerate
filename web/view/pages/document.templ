@@ -236,11 +236,22 @@ templ header() {
 			<img
 				id="walletIcon"
 				src="/assets/images/solanaLogo.png"
-				class="w-8.5 aspect-[34/33.25] rounded-3xl"
+				class="w-8.5 aspect-34/33.25 rounded-3xl"
 			/>
 			<button id="walletAddr" class="text-[#FFFFFFB2] font-normal text-base -tracking-tighter text-center cursor-pointer">
 				Connect wallet
 			</button>
 		</div>
 	</header>
+}
+
+templ backBtn() {
+	<button type="button" onclick="history.back()" class="flex gap-1 justify-center items-center w-fit mr-auto">
+		<img
+			src="/assets/svg/ArrowLeft.svg"
+			alt=""
+			class="w-6 aspect-square cursor-pointer"
+		/>
+		<p class=" text-lg font-archivoSemiBold font-bold tracking-[0.001em] text-left">Back</p>
+	</button>
 }

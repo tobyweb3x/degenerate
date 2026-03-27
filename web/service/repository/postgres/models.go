@@ -25,5 +25,7 @@ type SimilarityHit struct {
 	FoundAt       pgtype.Timestamptz `json:"found_at"`
 	SimilarityHit []byte             `json:"similarity_hit"`
 	ArbType       string             `json:"arb_type"`
+	IsDeleted     bool               `json:"is_deleted"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }

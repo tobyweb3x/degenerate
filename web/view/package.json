@@ -9,9 +9,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.11.0",
+  "packageManager": "pnpm@10.9.0",
   "devDependencies": {
-    "daisyui": "^5.5.18",
-    "tailwindcss": "^4.1.18"
+    "daisyui": "^5.5.19",
+    "tailwindcss": "^4.2.2"
   }
 }

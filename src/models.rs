@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, ensure};
+use chrono::{DateTime, NaiveDate};
 use polymarket_hft::client::polymarket::gamma;
 use qdrant_client::{Payload, qdrant};
 
@@ -136,10 +137,7 @@ impl QdrantPointData {
             protos::Platform::try_from(market_info.platform).is_ok(),
             "invalid platform"
         );
-        ensure!(
-            !market_info.end_date.trim().is_empty(),
-            "end_date cannot be empty"
-        );
+        ensure!(market_info.close_time_ms != 0, "close_time_ms cannot be 0");
         Ok(())
     }
 }
@@ -165,6 +163,22 @@ impl TryFrom<QdrantPointData> for qdrant::PointStruct {
             ..Default::default()
         })
     }
+}
+
+fn parse_ts_millis(s: &str) -> i64 {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+        return dt.timestamp_millis();
+    }
+
+    // Fallback: YYYY-MM-DD
+    if let Ok(date) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        if let Some(dt) = date.and_hms_opt(0, 0, 0) {
+            return dt.and_utc().timestamp_millis();
+        }
+    }
+
+    // If everything fails
+    0
 }
 
 pub fn generate_uuid_v5(seed: String) -> String {
@@ -194,7 +208,9 @@ impl From<gamma::Market> for protos::MarketInfo {
             market_category: String::new(),
             market_subcategory: String::new(),
             platform: protos::Platform::Polymarket.into(),
-            end_date: value.end_date_iso.or(value.end_date).unwrap_or_default(),
+            close_time_ms: parse_ts_millis(
+                &value.end_date_iso.or(value.end_date).unwrap_or_default(),
+            ),
         }
     }
 }
@@ -242,7 +258,17 @@ impl From<kalshi_rs::markets::models::Market> for protos::MarketInfo {
             market_category: String::new(),
             market_subcategory: String::new(),
             platform: protos::Platform::Kalshi.into(),
-            end_date: value.close_time,
+            close_time_ms: {
+                let ts = if !value.close_time.is_empty() {
+                    &value.close_time
+                } else if let Some(ref exp) = value.expiration_time {
+                    exp
+                } else {
+                    ""
+                };
+
+                parse_ts_millis(ts)
+            },
         }
     }
 }
@@ -513,7 +539,7 @@ pub fn make_market_key(asset_id: &str, platform: protos::Platform) -> MarketKey 
 
 /// MarketKey should be the asset_id for polymarket and market_ticker for kalshi
 pub type MarketKey = String;
-pub type correlationID = String;
+pub type CorrelationId = String;
 
 #[derive(Debug, Clone)]
 pub struct ArbMinifiedInfo {
@@ -522,6 +548,7 @@ pub struct ArbMinifiedInfo {
     pub market_id: String,
     pub token_id: String,
     pub leg: protos::Leg,
+    pub close_time_ms: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -532,7 +559,7 @@ pub struct ArbMinifiedInfoPair {
 }
 
 pub struct ArbWatch {
-    pub correlation_id: correlationID,
+    pub correlation_id: CorrelationId,
     pub arb: ArbMinifiedInfoPair,
 }
 
@@ -543,7 +570,8 @@ pub struct TopOfBook {
     pub best_ask: f32,
     pub ask_size: f32,
     pub spread: f32,
-    pub timestamp_ms: i64,
+    pub tob_timestamp_ms: i64,
+    pub sid: Option<i64>,
 }
 
 impl TryFrom<protos::ArbEssentials> for ArbMinifiedInfo {
@@ -553,12 +581,17 @@ impl TryFrom<protos::ArbEssentials> for ArbMinifiedInfo {
         let discovery = essentials
             .discovery
             .context("Missing 'discovery' in ArbEssentials")?;
+
         let market_info = discovery
             .market_info
             .context("Missing 'market_info' in Discovery")?;
 
         if market_info.market_id.is_empty() {
             anyhow::bail!("market_id cannot be empty")
+        }
+
+        if market_info.close_time_ms == 0 {
+            anyhow::bail!("close_time_ms cannot be 0")
         }
 
         if essentials.token_id.is_empty() {
@@ -577,6 +610,7 @@ impl TryFrom<protos::ArbEssentials> for ArbMinifiedInfo {
             token_id: essentials.token_id,
             platform,
             leg,
+            close_time_ms: market_info.close_time_ms,
         })
     }
 }

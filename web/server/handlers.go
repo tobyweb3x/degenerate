@@ -287,7 +287,7 @@ func (a *App) resolveHitSubmit(w http.ResponseWriter, r *http.Request) {
 
 	select {
 	case a.GrpcComms <- ebo:
-		if err := a.db.DeleteSimilarityHit(r.Context(), correlationID); err != nil {
+		if err := a.db.SoftDeleteSimilarityHit(r.Context(), correlationID); err != nil {
 			a.serverError(w, err)
 			return
 		}
@@ -366,14 +366,14 @@ func (a *App) resolveArbConfirmAndRun(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/arbs", http.StatusSeeOther)
 }
 
-func (a *App) deleteHit(w http.ResponseWriter, r *http.Request) {
+func (a *App) softDeleteHit(w http.ResponseWriter, r *http.Request) {
 	correlationId := chi.URLParam(r, "correlationId")
 	if correlationId == "" {
 		a.clientError(w, http.StatusBadRequest, errors.New("missing url path paramter"))
 		return
 	}
 
-	if err := a.db.DeleteSimilarityHit(r.Context(), correlationId); err != nil {
+	if err := a.db.SoftDeleteSimilarityHit(r.Context(), correlationId); err != nil {
 		a.serverError(w, fmt.Errorf("error delection %s: %w", correlationId, err))
 		return
 	}
@@ -386,7 +386,7 @@ func (a *App) deleteHit(w http.ResponseWriter, r *http.Request) {
 
 	templModels, err := frontend.ToCrossPlatformHits(hits...)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		a.serverError(w, err)
 		return
 	}
 	counts := countPlatformAchorsfromHit(templModels)
