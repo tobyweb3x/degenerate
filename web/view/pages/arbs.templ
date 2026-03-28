@@ -255,7 +255,7 @@ templ ResolveArbPartial(param TemplateModel[protos.ClientEbo_CrossPlatformArb]) 
 					<p><span class="font-archivo text-sm">Question:</span> { anchor.MarketInfo.Question }</p>
 					<p><span class="font-archivo text-sm">Outcomes: </span> { anchor.MarketInfo.Outcome }</p>
 					<div class="flex gap-8 mt-2.5">
-						<p class="text-xs font-dmSans">EndDate: <span class=" text-sm font-archivoSemiBold">{ friendlyTimeFromString(anchor.MarketInfo.EndDate) } </span></p>
+						<p class="text-xs font-dmSans">EndDate: <span class=" text-sm font-archivoSemiBold">{ friendlyTimeFromString(anchor.MarketInfo.CloseTimeMs) } </span></p>
 						<p class="text-xs font-archivo">platform: <span class=" text-sm font-archivoSemiBold">{ cases.Title(language.English).String(anchor.MarketInfo.Platform.String() ) }</span></p>
 						<p class="text-xs font-archivo">market: <span class="text-sm font-archivoSemiBold">{ fmt.Sprintf("%s/%s", cases.Title(language.English).String(match.MarketInfo.MarketCategory), match.MarketInfo.MarketSubcategory) }</span></p>
 					</div>
@@ -275,7 +275,7 @@ templ ResolveArbPartial(param TemplateModel[protos.ClientEbo_CrossPlatformArb]) 
 							<p class="text-sm font-dmSans font-bold"><span class="font-archivo text-sm">Outcomes: </span> { match.MarketInfo.Outcome }</p>
 							<p><span class="font-archivo text-sm">Match: </span> { fmt.Sprintf("%.2f%%", param.Payload.CrossPlatformArb.Scored * 100) }</p>
 							<div class="flex gap-8 mt-2.5">
-								<p class="text-xs font-dmSans">EndDate: <span class="text-sm font-archivoSemiBold">{ friendlyTimeFromString( match.MarketInfo.EndDate) } </span></p>
+								<p class="text-xs font-dmSans">EndDate: <span class="text-sm font-archivoSemiBold">{ friendlyTimeFromString( match.MarketInfo.CloseTimeMs) } </span></p>
 								<p class="text-xs font-archivo">platform: <span class="text-sm font-archivoSemiBold">{ cases.Title(language.English).String(match.MarketInfo.Platform.String()) }</span></p>
 								<p class="text-xs font-archivo">market: <span class="text-sm font-archivoSemiBold">{ fmt.Sprintf("%s/%s", cases.Title(language.English).String(match.MarketInfo.MarketCategory), match.MarketInfo.MarketSubcategory) }</span></p>
 							</div>

@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+
 func shortenID(id string) string {
 	n := len(id)
 	if n <= 10 {
@@ -41,13 +42,9 @@ func humanizeArbTime(t time.Time) string {
 	}
 }
 
-func friendlyTimeFromString(s string) string {
-	t, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		return s // fallback if parsing fails
-	}
-
-	return friendlyTime(t)
+func friendlyTimeFromString(t int64) string {
+	tt := time.UnixMilli(t).UTC()
+	return friendlyTime(tt)
 }
 
 func friendlyTime(t time.Time) string {

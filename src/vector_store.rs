@@ -29,7 +29,7 @@ pub const FIELD_MARKET_SUBCATEGORY: &str = "market_info.market_subcategory";
 pub const FIELD_CLOSE_TIME_MS: &str = "market_info.close_time_ms";
 pub const FIELD_INSERTED_AT: &str = "qdrant_inserted_at";
 
-pub const SIMILARITY_SCORE_THRESHOLD: f32 = 0.65;
+pub const SIMILARITY_SCORE_THRESHOLD: f32 = 0.75;
 
 #[derive(Clone)]
 pub struct VectorStore {

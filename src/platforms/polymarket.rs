@@ -3,13 +3,13 @@ use crate::models::QdrantMarketConverter;
 use crate::models::{self, protos};
 use crate::vector_store;
 use alloy::{hex, signers::local::PrivateKeySigner};
-use anyhow::{Context, Result};
+use anyhow::Context;
 use chrono::{Duration as ChronoDuration, SecondsFormat, Utc};
 use polymarket_hft::client::polymarket::{
     clob::{self, ws::WsMessage},
     gamma,
 };
-use std::{fs, path::Path, time::Duration};
+use std::{collections::HashSet, fs, path::Path, time::Duration};
 use tokio::{sync::mpsc, task::JoinSet};
 use tokio_util::sync::CancellationToken;
 
@@ -53,7 +53,7 @@ impl MyPolymarketClient {
         self.clob_ws_client.clone()
     }
 
-    pub async fn run_polymarket(&mut self, shutdown: CancellationToken) -> Result<()> {
+    pub async fn run_polymarket(&mut self, shutdown: CancellationToken) -> anyhow::Result<()> {
         let _signer = get_signer()?;
 
         self.clob_ws_client.subscribe_market(vec![], true).await?;
@@ -95,7 +95,7 @@ impl MyPolymarketClient {
         Ok(())
     }
 
-    async fn handle_polymarket_wss_message(&self, msg: WsMessage) -> Result<()> {
+    async fn handle_polymarket_wss_message(&self, msg: WsMessage) -> anyhow::Result<()> {
         match msg {
             // !!: this does not make sense no more, let just poll, new market is def. illiquid
             clob::ws::WsMessage::NewMarket(msg) => {
@@ -155,22 +155,10 @@ impl MyPolymarketClient {
 
     fn sort_polymarket_tags(tags: &[gamma::Tag]) -> Option<models::MarketTag> {
         for tag in tags {
-            match tag.id.as_str().trim() {
-                id if id == models::MarketTag::EPL.info().polymarket_identifier => {
-                    return Some(models::MarketTag::EPL);
-                }
-                id if id == models::MarketTag::NBA.info().polymarket_identifier => {
-                    return Some(models::MarketTag::NBA);
-                }
-                id if id == models::MarketTag::NFL.info().polymarket_identifier => {
-                    return Some(models::MarketTag::NFL);
-                }
-                _ => {
-                    return None;
-                }
+            if let Some(market) = models::POLYMARKET_TAG_LOOKUP.get(tag.id.trim()) {
+                return Some(*market);
             }
         }
-
         None
     }
 
@@ -178,9 +166,9 @@ impl MyPolymarketClient {
         &self,
         duration_in_secs: Duration,
         shutdown: CancellationToken,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         let tags = [
-            models::MarketTag::EPL,
+            models::MarketTag::Soccer,
             models::MarketTag::NBA,
             models::MarketTag::NFL,
         ];
@@ -231,40 +219,52 @@ impl MyPolymarketClient {
         seconds_duration: u64,
         market: models::MarketTag,
         shutdown: CancellationToken,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         let time_diff = Utc::now() - ChronoDuration::seconds(seconds_duration as i64);
         let formatted_iso = time_diff.to_rfc3339_opts(SecondsFormat::Secs, true);
 
-        let (mut offset, limit): (usize, usize) = (0, 100);
+        let tags = market.identifiers(protos::Platform::Polymarket);
+        let mut container = Vec::with_capacity(tags.len() * 128);
+        let mut seen_markets = HashSet::with_capacity(tags.len() * 128);
 
-        let mut container = Vec::with_capacity(limit);
-        loop {
-            if shutdown.is_cancelled() {
-                break;
+        for &tag_id in tags {
+            let (mut offset, limit): (usize, usize) = (0, 100);
+            loop {
+                if shutdown.is_cancelled() {
+                    break;
+                }
+
+                let markets = self
+                    .gamma_client
+                    .get_markets(gamma::GetMarketsRequest {
+                        limit: Some(limit as u32),
+                        offset: Some(offset as u32),
+                        tag_id: Some(tag_id),
+                        closed: Some(false),
+                        ascending: Some(false),
+                        include_tag: Some(true),
+                        start_date_min: Some(formatted_iso.as_str()),
+                        ..Default::default()
+                    })
+                    .await?;
+
+                let market_len = markets.len();
+                for m in markets {
+                    let condition_id = m.condition_id.clone().unwrap_or_default();
+                    if seen_markets.insert(condition_id) {
+                        container.push(m);
+                    }
+                }
+
+                offset += limit;
+                if market_len < limit {
+                    break;
+                }
             }
+        }
 
-            let markets = self
-                .gamma_client
-                .get_markets(gamma::GetMarketsRequest {
-                    limit: Some(limit as u32),
-                    offset: Some(offset as u32),
-                    tag_id: Some(market.info().polymarket_identifier),
-                    closed: Some(false),
-                    ascending: Some(false),
-                    related_tags: Some(true),
-                    include_tag: Some(true),
-                    start_date_min: Some(formatted_iso.as_str()),
-                    ..Default::default()
-                })
-                .await?;
-
-            let market_len = markets.len();
-            container.extend(markets);
-
-            offset += limit;
-            if market_len < limit {
-                break;
-            }
+        if container.is_empty() {
+            return Ok(());
         }
 
         let qdrant_payloads = protos::QdrantPayload::from_markets(
@@ -289,7 +289,10 @@ impl MyPolymarketClient {
             .await
     }
 
-    pub async fn backfill_polymarket_history(&self, shutdown: CancellationToken) -> Result<()> {
+    pub async fn backfill_polymarket_history(
+        &self,
+        shutdown: CancellationToken,
+    ) -> anyhow::Result<()> {
         let last_insert = self
             .qdrant_client
             .get_last_insert_time(protos::Platform::Polymarket)
@@ -326,7 +329,7 @@ impl MyPolymarketClient {
     }
 }
 
-fn get_signer() -> Result<PrivateKeySigner> {
+fn get_signer() -> anyhow::Result<PrivateKeySigner> {
     let signer = if Path::new(PRIVATE_KEY_FILE).exists() {
         load_wallet()?
     } else {
@@ -336,7 +339,7 @@ fn get_signer() -> Result<PrivateKeySigner> {
     Ok(signer)
 }
 
-fn write_new_wallet() -> Result<PrivateKeySigner> {
+fn write_new_wallet() -> anyhow::Result<PrivateKeySigner> {
     let signer = PrivateKeySigner::random();
     let hex_encodeded_private_key = hex::encode(signer.to_bytes());
 
@@ -347,7 +350,7 @@ fn write_new_wallet() -> Result<PrivateKeySigner> {
     Ok(signer)
 }
 
-fn load_wallet() -> Result<PrivateKeySigner> {
+fn load_wallet() -> anyhow::Result<PrivateKeySigner> {
     let data = fs::read_to_string(PRIVATE_KEY_FILE)?;
     let signer = data.trim().parse::<PrivateKeySigner>()?;
 

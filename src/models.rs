@@ -3,10 +3,12 @@ use chrono::{DateTime, NaiveDate};
 use polymarket_hft::client::polymarket::gamma;
 use qdrant_client::{Payload, qdrant};
 
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
-use std::fmt;
+use std::{collections::HashMap, fmt};
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 use uuid::Uuid;
 
 pub mod protos {
@@ -387,18 +389,55 @@ impl QdrantMarketConverter<kalshi_rs::markets::models::Market> for protos::Qdran
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter)]
 pub enum MarketTag {
-    EPL,
+    Soccer,
     NBA,
     NFL,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct MarketTagInfo {
-    pub polymarket_identifier: &'static str,
-    pub kalshi_identifier: &'static str,
     pub market_category: &'static str,
     pub market_subcategory: &'static str,
+}
+
+impl MarketTag {
+    pub fn identifiers(&self, platform: protos::Platform) -> &'static [&'static str] {
+        match (self, platform) {
+            (Self::NBA, protos::Platform::Polymarket) => &[
+                "745", "100240", "100871", "102037", "101506", "102288", "100108", "100254",
+                "101849", "100283", "102769",
+            ],
+            (Self::NBA, protos::Platform::Kalshi) => &["Basketball"],
+
+            (Self::Soccer, protos::Platform::Polymarket) => &["306", "100350", "100834", "100300"],
+            (Self::Soccer, protos::Platform::Kalshi) => &["Soccer"],
+
+            (Self::NFL, protos::Platform::Polymarket) => &[
+                "450", "101674", "100959", "1453", "100833", "102575", "102590", "636", "102160",
+                "101594", "1186", "102934", "10", "101673",
+            ],
+            (Self::NFL, protos::Platform::Kalshi) => &["Football"],
+        }
+    }
+
+    pub fn info(&self) -> MarketTagInfo {
+        match self {
+            Self::Soccer => MarketTagInfo {
+                market_category: "sport",
+                market_subcategory: "Socer",
+            },
+            Self::NBA => MarketTagInfo {
+                market_category: "sport",
+                market_subcategory: "NBA",
+            },
+            Self::NFL => MarketTagInfo {
+                market_category: "sport",
+                market_subcategory: "NFL",
+            },
+        }
+    }
 }
 
 impl fmt::Display for MarketTagInfo {
@@ -407,30 +446,29 @@ impl fmt::Display for MarketTagInfo {
     }
 }
 
-impl MarketTag {
-    pub fn info(&self) -> MarketTagInfo {
-        match self {
-            Self::EPL => MarketTagInfo {
-                polymarket_identifier: "306",
-                kalshi_identifier: "Soccer",
-                market_category: "sport",
-                market_subcategory: "EPL",
-            },
-            Self::NBA => MarketTagInfo {
-                polymarket_identifier: "745",
-                kalshi_identifier: "Basketball",
-                market_category: "sport",
-                market_subcategory: "NBA",
-            },
-            Self::NFL => MarketTagInfo {
-                polymarket_identifier: "450",
-                kalshi_identifier: "Football",
-                market_category: "sport",
-                market_subcategory: "NFL",
-            },
+pub static POLYMARKET_TAG_LOOKUP: Lazy<HashMap<&'static str, MarketTag>> = Lazy::new(|| {
+    let mut map = HashMap::new();
+
+    for market in MarketTag::iter() {
+        for &tag in market.identifiers(protos::Platform::Polymarket) {
+            map.insert(tag, market);
         }
     }
-}
+
+    map
+});
+
+pub static KALSHI_TAG_LOOKUP: Lazy<HashMap<&'static str, MarketTag>> = Lazy::new(|| {
+    let mut map = HashMap::new();
+
+    for market in MarketTag::iter() {
+        for &tag in market.identifiers(protos::Platform::Kalshi) {
+            map.insert(tag, market);
+        }
+    }
+
+    map
+});
 
 impl TryFrom<qdrant::ScoredPoint> for protos::MatchCandidate {
     type Error = anyhow::Error;

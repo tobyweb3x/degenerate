@@ -209,23 +209,11 @@ impl MyKalshiClient {
     }
 
     fn sort_kalshi_tags(series_data: Series) -> Option<models::MarketTag> {
-        let Some(tags) = series_data.tags else {
-            return None;
-        };
+        let tags = series_data.tags?;
 
         for tag in tags {
-            match tag.as_str().trim() {
-                tag if tag == models::MarketTag::EPL.info().kalshi_identifier => {
-                    return Some(models::MarketTag::EPL);
-                }
-                tag if tag == models::MarketTag::NBA.info().kalshi_identifier => {
-                    return Some(models::MarketTag::NBA);
-                }
-                tag if tag == models::MarketTag::NFL.info().kalshi_identifier => {
-                    return Some(models::MarketTag::NFL);
-                }
-
-                _ => {}
+            if let Some(market) = models::KALSHI_TAG_LOOKUP.get(tag.trim()) {
+                return Some(*market);
             }
         }
 
@@ -280,7 +268,7 @@ impl MyKalshiClient {
         let mut join_set = JoinSet::new();
 
         for (tag, markets) in [
-            (models::MarketTag::EPL, soccer),
+            (models::MarketTag::Soccer, soccer),
             (models::MarketTag::NFL, football),
             (models::MarketTag::NBA, basketball),
         ] {
