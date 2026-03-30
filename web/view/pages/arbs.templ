@@ -90,6 +90,7 @@ templ ArbsPartial(param []TemplateModel[protos.ClientEbo_CrossPlatformArb], plat
 									<p><span class="font-archivo text-sm">Picks (<span class="text-xs">{ fmt.Sprintf("anchor--> %d ", anchor.Leg) }</span>): </span> <span class="font-archivoSemiBold">{ anchor.LegStr }</span></p>
 									<p><span class="font-archivo text-sm">Picks (<span class="text-xs">{ fmt.Sprintf("match--> %d ", match.Leg) }</span>): </span> <span class="font-archivoSemiBold">{ match.LegStr }</span></p>
 								</div>
+								<p class="font-archivo text-sm">Category: <span class=" text-sm font-archivoSemiBold">{ cases.Title(language.English).String(anchor.MarketInfo.MarketCategory) }</span></p>
 								<div class="flex gap-8 mt-2.5 items-center">
 									<p class="text-xs font-archivo">foundAt: <span class=" text-sm font-archivoSemiBold">{ friendlyTime(arb.ArbFoundAt) } </span></p>
 									<p class="text-xs font-archivo">
@@ -246,43 +247,45 @@ templ ResolveArbPartial(param TemplateModel[protos.ClientEbo_CrossPlatformArb]) 
 			</div>
 			{{ anchor := param.Payload.CrossPlatformArb.Anchor.Discovery }}
 			{{ match := param.Payload.CrossPlatformArb.Match.Discovery }}
-			<div class="mt-2">
-				<div class="flex w-full justify-between item">
-					<p class="font-archivoSemiBold font-extralight text-xl">Anchor:</p>
-					<p class="font-bold">Pick: <span class="font-dmSans text-xs font-extralight">{ anchor.LegStr }</span></p>
-				</div>
-				<div class="border-2 border-[#FFFFFF4D] rounded-2xl p-2.5 mt-2.5 text-md">
-					<p><span class="font-archivo text-sm">Question:</span> { anchor.MarketInfo.Question }</p>
-					<p><span class="font-archivo text-sm">Outcomes: </span> { anchor.MarketInfo.Outcome }</p>
-					<div class="flex gap-8 mt-2.5">
-						<p class="text-xs font-dmSans">EndDate: <span class=" text-sm font-archivoSemiBold">{ friendlyTimeFromString(anchor.MarketInfo.CloseTimeMs) } </span></p>
-						<p class="text-xs font-archivo">platform: <span class=" text-sm font-archivoSemiBold">{ cases.Title(language.English).String(anchor.MarketInfo.Platform.String() ) }</span></p>
-						<p class="text-xs font-archivo">market: <span class="text-sm font-archivoSemiBold">{ fmt.Sprintf("%s/%s", cases.Title(language.English).String(match.MarketInfo.MarketCategory), match.MarketInfo.MarketSubcategory) }</span></p>
+			<div id="real-info" class="">
+				<div class="mt-2">
+					<div class="flex w-full justify-between item">
+						<p class="font-archivoSemiBold font-extralight text-xl">Anchor:</p>
+						<p class="font-bold">Picked: <span class="font-dmSans text-xs font-extralight">{ anchor.LegStr }</span></p>
 					</div>
-					<p class="font-extrabold font-archivoSemiBold text-sm mt-3">Rules:</p>
-					<p class="font-dmSans text-sm">{ anchor.MarketInfo.Rules }</p>
+					<div class="border-2 border-[#FFFFFF4D] rounded-2xl p-2.5 mt-2.5 text-md">
+						<p><span class="font-archivo text-sm">Question:</span> { anchor.MarketInfo.Question }</p>
+						<p><span class="font-archivo text-sm">Outcomes: </span> { anchor.MarketInfo.Outcome }</p>
+						<div class="flex gap-8 mt-2.5">
+							<p class="text-xs font-dmSans">EndDate: <span class=" text-sm font-archivoSemiBold">{ friendlyTimeFromString(anchor.MarketInfo.CloseTimeMs) } </span></p>
+							<p class="text-xs font-archivo">platform: <span class=" text-sm font-archivoSemiBold">{ cases.Title(language.English).String(anchor.MarketInfo.Platform.String() ) }</span></p>
+							<p class="text-xs font-archivo">market: <span class="text-sm font-archivoSemiBold">{ fmt.Sprintf("%s/%s", cases.Title(language.English).String(match.MarketInfo.MarketCategory), match.MarketInfo.MarketSubcategory) }</span></p>
+						</div>
+						<p class="font-extrabold font-archivoSemiBold text-sm mt-3">Rules:</p>
+						<p class="font-dmSans text-sm">{ anchor.MarketInfo.Rules }</p>
+					</div>
 				</div>
-			</div>
-			<div class="mt-4">
-				<div class="flex w-full justify-between item">
-					<p class="font-archivoSemiBold font-extralight text-xl">Match:</p>
-					<p class="font-bold">Pick: <span class="font-dmSans text-xs font-extralight">{ match.LegStr }</span></p>
-				</div>
-				<div class="h-fit mt-2.5 pb-5 border-2 border-[#FFFFFF4D] rounded-2xl px-2.5 py-2.5 text-md transition-all duration-300" id={ fmt.Sprintf("match-row-%s", match.MarketInfo.Uuid) }>
-					<div class="flex flex-row justify-between">
-						<div>
-							<p class="text-sm font-dmSans font-bold"><span class="font-archivo text-sm">Question:</span> { match.MarketInfo.Question }</p>
-							<p class="text-sm font-dmSans font-bold"><span class="font-archivo text-sm">Outcomes: </span> { match.MarketInfo.Outcome }</p>
-							<p><span class="font-archivo text-sm">Match: </span> { fmt.Sprintf("%.2f%%", param.Payload.CrossPlatformArb.Scored * 100) }</p>
-							<div class="flex gap-8 mt-2.5">
-								<p class="text-xs font-dmSans">EndDate: <span class="text-sm font-archivoSemiBold">{ friendlyTimeFromString( match.MarketInfo.CloseTimeMs) } </span></p>
-								<p class="text-xs font-archivo">platform: <span class="text-sm font-archivoSemiBold">{ cases.Title(language.English).String(match.MarketInfo.Platform.String()) }</span></p>
-								<p class="text-xs font-archivo">market: <span class="text-sm font-archivoSemiBold">{ fmt.Sprintf("%s/%s", cases.Title(language.English).String(match.MarketInfo.MarketCategory), match.MarketInfo.MarketSubcategory) }</span></p>
+				<div class="mt-4">
+					<div class="flex w-full justify-between item">
+						<p class="font-archivoSemiBold font-extralight text-xl">Match:</p>
+						<p class="font-bold">Picked: <span class="font-dmSans text-xs font-extralight">{ match.LegStr }</span></p>
+					</div>
+					<div class="h-fit mt-2.5 pb-5 border-2 border-[#FFFFFF4D] rounded-2xl px-2.5 py-2.5 text-md transition-all duration-300" id={ fmt.Sprintf("match-row-%s", match.MarketInfo.Uuid) }>
+						<div class="flex flex-row justify-between">
+							<div>
+								<p class="text-sm font-dmSans font-bold"><span class="font-archivo text-sm">Question:</span> { match.MarketInfo.Question }</p>
+								<p class="text-sm font-dmSans font-bold"><span class="font-archivo text-sm">Outcomes: </span> { match.MarketInfo.Outcome }</p>
+								<p><span class="font-archivo text-sm">Match: </span> { fmt.Sprintf("%.2f%%", param.Payload.CrossPlatformArb.Scored * 100) }</p>
+								<div class="flex gap-8 mt-2.5">
+									<p class="text-xs font-dmSans">EndDate: <span class="text-sm font-archivoSemiBold">{ friendlyTimeFromString( match.MarketInfo.CloseTimeMs) } </span></p>
+									<p class="text-xs font-archivo">platform: <span class="text-sm font-archivoSemiBold">{ cases.Title(language.English).String(match.MarketInfo.Platform.String()) }</span></p>
+									<p class="text-xs font-archivo">market: <span class="text-sm font-archivoSemiBold">{ fmt.Sprintf("%s/%s", cases.Title(language.English).String(match.MarketInfo.MarketCategory), match.MarketInfo.MarketSubcategory) }</span></p>
+								</div>
 							</div>
 						</div>
+						<p class="font-extrabold font-archivoSemiBold text-sm mt-3">Rules:</p>
+						<p class="font-dmSans text-sm">{ match.MarketInfo.Rules }</p>
 					</div>
-					<p class="font-extrabold font-archivoSemiBold text-sm mt-3">Rules:</p>
-					<p class="font-dmSans text-sm">{ match.MarketInfo.Rules }</p>
 				</div>
 			</div>
 			if !param.Running {

@@ -70,6 +70,7 @@ templ SimilarityHitPartial(param []TemplateModel[protos.ClientEbo_CrossPlatformH
 										<p class="text-xs font-archivo">foundAt: <span class=" text-sm font-archivoSemiBold">{ friendlyTime(hit.ArbFoundAt) } </span></p>
 										<p class="text-xs font-archivo">platform: <span class=" text-sm font-archivoSemiBold">{ cases.Title(language.English).String(hit.Payload.CrossPlatformHit.Anchor.Platform.String()) }</span></p>
 										<p class="text-xs font-archivo">anchor expiration: <span class=" text-sm font-archivoSemiBold">{ friendlyTimeFromString(hit.Payload.CrossPlatformHit.Anchor.CloseTimeMs) }</span></p>
+										<p class="text-xs font-archivo">category: <span class=" text-sm font-archivoSemiBold">{ cases.Title(language.English).String(hit.Payload.CrossPlatformHit.Anchor.MarketCategory) }</span></p>
 									</div>
 									<section class="flex justify-between items-center">
 										<ul class="flex  gap-4 pt-2.5 items-baseline">
