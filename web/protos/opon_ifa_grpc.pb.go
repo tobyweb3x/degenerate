@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v7.34.1
-// source: similarity_hit.proto
+// source: opon_ifa.proto
 
 package protos
 
@@ -19,7 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	EsuOdara_Esu_FullMethodName = "/similarityhit.EsuOdara/Esu"
+	EsuOdara_Esu_FullMethodName = "/opon_ifa.EsuOdara/Esu"
 )
 
 // EsuOdaraClient is the client API for EsuOdara service.
@@ -100,7 +100,7 @@ type EsuOdara_EsuServer = grpc.BidiStreamingServer[ClientEbo, ServerEbo]
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var EsuOdara_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "similarityhit.EsuOdara",
+	ServiceName: "opon_ifa.EsuOdara",
 	HandlerType: (*EsuOdaraServer)(nil),
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
@@ -111,5 +111,5 @@ var EsuOdara_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "similarity_hit.proto",
+	Metadata: "opon_ifa.proto",
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -57,6 +58,29 @@ func (a *App) similarityHitsPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	fresh_hits := make([]frontend.TemplateModel[protos.ClientEbo_CrossPlatformHit], 0, len(templModels))
+	past_hits := make([]string, 0, len(templModels))
+	now := time.Now()
+
+	for _, v := range templModels {
+		anchor_close_time := time.UnixMilli(v.Payload.CrossPlatformHit.Anchor.CloseTimeMs)
+		if anchor_close_time.Before(now) {
+			past_hits = append(past_hits, v.CorrelationId)
+			continue
+		}
+
+		fresh_hits = append(fresh_hits, v)
+	}
+
+	go func(correction_ids []string) {
+		for _, correctionID := range correction_ids {
+			if err := a.db.SoftDeleteSimilarityHit(context.Background(), correctionID); err != nil {
+				log.Println("error deleting past_hits")
+			}
+		}
+	}(past_hits)
+
 	counts := countPlatformAchorsfromHit(templModels)
 
 	if isHXRequest(r) {
@@ -405,8 +429,22 @@ func (a *App) deleteArb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := a.db.DeleteArb(r.Context(), correlationId); err != nil {
-		a.serverError(w, fmt.Errorf("error delection %s: %w", correlationId, err))
+	ebo := &protos.ServerEbo{
+		Action: &protos.ServerEbo_DeleteRunningArbs{
+			DeleteRunningArbs: &protos.DeleteRunningArbRequest{
+				CorrelationIds: []string{correlationId},
+			},
+		},
+	}
+
+	select {
+	case a.GrpcComms <- ebo:
+		if err := a.db.DeleteArb(r.Context(), correlationId); err != nil {
+			a.serverError(w, fmt.Errorf("error delection %s: %w", correlationId, err))
+			return
+		}
+	case <-time.After(50 * time.Millisecond):
+		a.serverError(w, errors.New("GrpcComms send timeout"))
 		return
 	}
 

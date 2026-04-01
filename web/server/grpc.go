@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -39,7 +40,7 @@ func (s *GrpcServer) Esu(stream protos.EsuOdara_EsuServer) error {
 		defer close(readErrCh)
 
 		for {
-			msg, err := stream.Recv()
+			msg, err := stream.Recv() // receives from client
 			if err == io.EOF {
 				return
 			}
@@ -71,14 +72,14 @@ func (s *GrpcServer) Esu(stream protos.EsuOdara_EsuServer) error {
 		case err := <-readErrCh:
 			return err
 
-		case cmd := <-s.app.GrpcComms:
+		case cmd := <-s.app.GrpcComms: // receives from app
 			if cmd != nil {
 				if err := stream.Send(cmd); err != nil {
 					return status.Errorf(codes.Unavailable, "failed to send app command: %v", err)
 				}
 			}
 
-		case msg := <-sendCh:
+		case msg := <-sendCh: // response from app to client
 			if msg != nil {
 				if err := stream.Send(msg); err != nil {
 					return status.Errorf(codes.Unavailable, "failed to send reply: %v", err)
@@ -95,6 +96,10 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.ClientEbo) (*protos.Se
 	case *protos.ClientEbo_CrossPlatformHit:
 		hit := p.CrossPlatformHit
 
+		if hit == nil {
+			return nil, errors.New("got nil from client")
+		}
+
 		byteData, err := protojson.Marshal(hit)
 		if err != nil {
 			return nil, err
@@ -109,6 +114,11 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.ClientEbo) (*protos.Se
 
 	case *protos.ClientEbo_IntraPlatformHit:
 		hit := p.IntraPlatformHit
+
+		if hit == nil {
+			return nil, errors.New("got nil from client")
+		}
+
 		byteData, err := frontend.ProtoMarshaler.Marshal(hit)
 		if err != nil {
 			return nil, err
@@ -123,6 +133,10 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.ClientEbo) (*protos.Se
 
 	case *protos.ClientEbo_CrossPlatformArb:
 		arb := p.CrossPlatformArb
+
+		if arb == nil {
+			return nil, errors.New("got nil from client")
+		}
 
 		byteData, err := protojson.Marshal(arb)
 		if err != nil {
@@ -139,6 +153,10 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.ClientEbo) (*protos.Se
 	case *protos.ClientEbo_IntraPlatformArb:
 		arb := p.IntraPlatformArb
 
+		if arb == nil {
+			return nil, errors.New("got nil from client")
+		}
+
 		byteData, err := protojson.Marshal(arb)
 		if err != nil {
 			return nil, err
@@ -151,9 +169,66 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.ClientEbo) (*protos.Se
 			byteData,
 		)
 
+	case *protos.ClientEbo_GetRunningArbs:
+		req := p.GetRunningArbs
+
+		if req == nil {
+			return nil, errors.New("got nil from client")
+		}
+
+		switch req.ArbType {
+		case protos.ArbType_CROSS_PLATFORM:
+			runningArbs, err := a.db.GetRunningCrossArbs(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("got error from db: %w", err)
+			}
+
+			arbs := make([]*protos.Arb, 0, len(runningArbs))
+			correlationIds := make([]string, 0, len(runningArbs))
+
+			for _, arb := range runningArbs {
+				var arb_ebo protos.Arb
+				if err := frontend.ProtoUnMarshaler.Unmarshal(arb.Arbs, &arb_ebo); err != nil {
+					log.Println("error Unmarshaling arb:", err.Error())
+					continue
+				}
+
+				arbs = append(arbs, &arb_ebo)
+				correlationIds = append(correlationIds, arb.CorrelationID)
+			}
+
+			return &protos.ServerEbo{
+				CorrelationId: "",
+				FoundAt:       0,
+				Action: &protos.ServerEbo_RunningArbsResponse{
+					RunningArbsResponse: &protos.Arbs{
+						CorrelationIds:  correlationIds,
+						ConfirmedAndRun: arbs,
+					},
+				},
+			}, nil
+
+		case protos.ArbType_INTRA_PLATFORM:
+			return nil, errors.New("protos.ArbType_INTRA_PLATFORM not implemented")
+
+		default:
+			return nil, errors.New("arbType not supported")
+		}
+
+	case *protos.ClientEbo_DeleteRunningArbs:
+		req := p.DeleteRunningArbs
+
+		if req == nil {
+			return nil, errors.New("got nil from client")
+		}
+
+		for _, correlationID := range req.CorrelationIds {
+			a.db.DeleteArb(ctx, correlationID)
+		}
+
 	case nil:
 		return nil, fmt.Errorf("received Ebo with empty payload")
 	}
 
-	return nil, fmt.Errorf("received unknown Action")
+	return nil, fmt.Errorf("received unknown Action: %+v", ebo)
 }

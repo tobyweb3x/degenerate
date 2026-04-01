@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package similarityhit;
+package opon_ifa;
 option go_package = "web/protos;";
 
 // ------------------------------------------------
@@ -82,6 +82,30 @@ message Arb {
   ArbEssentials match = 2;
   float scored = 3;
 }
+message Arbs {
+  repeated string correlation_ids = 1;
+  repeated Arb confirmed_and_run = 2;
+}
+
+// ------------------------------------------------
+// THE REQUESTS
+// ------------------------------------------------
+
+
+enum ArbType {
+    CROSS_PLATFORM = 0;
+    INTRA_PLATFORM = 1;
+}
+
+// client(Rust) asks the server(Go) for confirmed arbs
+message RunningArbsRequest {
+    ArbType arb_type = 1;
+}
+
+message DeleteRunningArbRequest {
+  repeated string correlation_ids = 1;
+}
+
 
 // ------------------------------------------------
 // THE ENVELOPE
@@ -97,6 +121,9 @@ message ClientEbo {
 
         Arb cross_platform_arb = 5;
         Arb intra_platform_arb = 6;
+
+        RunningArbsRequest get_running_arbs = 7;
+        DeleteRunningArbRequest delete_running_arbs = 8;
     }
 }
 message ServerEbo {
@@ -108,6 +135,9 @@ message ServerEbo {
         DiscoveredArbList intra_platform_arb_discovery = 4;
 
         Arb confirmed_and_run = 5;
+        Arbs running_arbs_response = 6;
+        DeleteRunningArbRequest delete_running_arbs = 7;
+
     }
 }
 

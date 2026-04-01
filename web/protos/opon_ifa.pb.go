@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v7.34.1
-// source: similarity_hit.proto
+// source: opon_ifa.proto
 
 package protos
 
@@ -51,11 +51,11 @@ func (x Platform) String() string {
 }
 
 func (Platform) Descriptor() protoreflect.EnumDescriptor {
-	return file_similarity_hit_proto_enumTypes[0].Descriptor()
+	return file_opon_ifa_proto_enumTypes[0].Descriptor()
 }
 
 func (Platform) Type() protoreflect.EnumType {
-	return &file_similarity_hit_proto_enumTypes[0]
+	return &file_opon_ifa_proto_enumTypes[0]
 }
 
 func (x Platform) Number() protoreflect.EnumNumber {
@@ -64,7 +64,7 @@ func (x Platform) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Platform.Descriptor instead.
 func (Platform) EnumDescriptor() ([]byte, []int) {
-	return file_similarity_hit_proto_rawDescGZIP(), []int{0}
+	return file_opon_ifa_proto_rawDescGZIP(), []int{0}
 }
 
 type Leg int32
@@ -97,11 +97,11 @@ func (x Leg) String() string {
 }
 
 func (Leg) Descriptor() protoreflect.EnumDescriptor {
-	return file_similarity_hit_proto_enumTypes[1].Descriptor()
+	return file_opon_ifa_proto_enumTypes[1].Descriptor()
 }
 
 func (Leg) Type() protoreflect.EnumType {
-	return &file_similarity_hit_proto_enumTypes[1]
+	return &file_opon_ifa_proto_enumTypes[1]
 }
 
 func (x Leg) Number() protoreflect.EnumNumber {
@@ -110,7 +110,53 @@ func (x Leg) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Leg.Descriptor instead.
 func (Leg) EnumDescriptor() ([]byte, []int) {
-	return file_similarity_hit_proto_rawDescGZIP(), []int{1}
+	return file_opon_ifa_proto_rawDescGZIP(), []int{1}
+}
+
+type ArbType int32
+
+const (
+	ArbType_CROSS_PLATFORM ArbType = 0
+	ArbType_INTRA_PLATFORM ArbType = 1
+)
+
+// Enum value maps for ArbType.
+var (
+	ArbType_name = map[int32]string{
+		0: "CROSS_PLATFORM",
+		1: "INTRA_PLATFORM",
+	}
+	ArbType_value = map[string]int32{
+		"CROSS_PLATFORM": 0,
+		"INTRA_PLATFORM": 1,
+	}
+)
+
+func (x ArbType) Enum() *ArbType {
+	p := new(ArbType)
+	*p = x
+	return p
+}
+
+func (x ArbType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ArbType) Descriptor() protoreflect.EnumDescriptor {
+	return file_opon_ifa_proto_enumTypes[2].Descriptor()
+}
+
+func (ArbType) Type() protoreflect.EnumType {
+	return &file_opon_ifa_proto_enumTypes[2]
+}
+
+func (x ArbType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ArbType.Descriptor instead.
+func (ArbType) EnumDescriptor() ([]byte, []int) {
+	return file_opon_ifa_proto_rawDescGZIP(), []int{2}
 }
 
 type MarketInfo struct {
@@ -123,14 +169,14 @@ type MarketInfo struct {
 	MarketCategory    string                 `protobuf:"bytes,6,opt,name=market_category,json=marketCategory,proto3" json:"market_category,omitempty"`
 	MarketSubcategory string                 `protobuf:"bytes,7,opt,name=market_subcategory,json=marketSubcategory,proto3" json:"market_subcategory,omitempty"`
 	CloseTimeMs       int64                  `protobuf:"varint,8,opt,name=close_time_ms,json=closeTimeMs,proto3" json:"close_time_ms,omitempty"`
-	Platform          Platform               `protobuf:"varint,9,opt,name=platform,proto3,enum=similarityhit.Platform" json:"platform,omitempty"`
+	Platform          Platform               `protobuf:"varint,9,opt,name=platform,proto3,enum=opon_ifa.Platform" json:"platform,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
 
 func (x *MarketInfo) Reset() {
 	*x = MarketInfo{}
-	mi := &file_similarity_hit_proto_msgTypes[0]
+	mi := &file_opon_ifa_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -142,7 +188,7 @@ func (x *MarketInfo) String() string {
 func (*MarketInfo) ProtoMessage() {}
 
 func (x *MarketInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_similarity_hit_proto_msgTypes[0]
+	mi := &file_opon_ifa_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -155,7 +201,7 @@ func (x *MarketInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarketInfo.ProtoReflect.Descriptor instead.
 func (*MarketInfo) Descriptor() ([]byte, []int) {
-	return file_similarity_hit_proto_rawDescGZIP(), []int{0}
+	return file_opon_ifa_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *MarketInfo) GetUuid() string {
@@ -231,7 +277,7 @@ type QdrantPayload struct {
 
 func (x *QdrantPayload) Reset() {
 	*x = QdrantPayload{}
-	mi := &file_similarity_hit_proto_msgTypes[1]
+	mi := &file_opon_ifa_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -243,7 +289,7 @@ func (x *QdrantPayload) String() string {
 func (*QdrantPayload) ProtoMessage() {}
 
 func (x *QdrantPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_similarity_hit_proto_msgTypes[1]
+	mi := &file_opon_ifa_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -256,7 +302,7 @@ func (x *QdrantPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QdrantPayload.ProtoReflect.Descriptor instead.
 func (*QdrantPayload) Descriptor() ([]byte, []int) {
-	return file_similarity_hit_proto_rawDescGZIP(), []int{1}
+	return file_opon_ifa_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *QdrantPayload) GetMarketInfo() *MarketInfo {
@@ -283,7 +329,7 @@ type MatchCandidate struct {
 
 func (x *MatchCandidate) Reset() {
 	*x = MatchCandidate{}
-	mi := &file_similarity_hit_proto_msgTypes[2]
+	mi := &file_opon_ifa_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -295,7 +341,7 @@ func (x *MatchCandidate) String() string {
 func (*MatchCandidate) ProtoMessage() {}
 
 func (x *MatchCandidate) ProtoReflect() protoreflect.Message {
-	mi := &file_similarity_hit_proto_msgTypes[2]
+	mi := &file_opon_ifa_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -308,7 +354,7 @@ func (x *MatchCandidate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MatchCandidate.ProtoReflect.Descriptor instead.
 func (*MatchCandidate) Descriptor() ([]byte, []int) {
-	return file_similarity_hit_proto_rawDescGZIP(), []int{2}
+	return file_opon_ifa_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *MatchCandidate) GetScored() float32 {
@@ -335,7 +381,7 @@ type SimilarityHit struct {
 
 func (x *SimilarityHit) Reset() {
 	*x = SimilarityHit{}
-	mi := &file_similarity_hit_proto_msgTypes[3]
+	mi := &file_opon_ifa_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -347,7 +393,7 @@ func (x *SimilarityHit) String() string {
 func (*SimilarityHit) ProtoMessage() {}
 
 func (x *SimilarityHit) ProtoReflect() protoreflect.Message {
-	mi := &file_similarity_hit_proto_msgTypes[3]
+	mi := &file_opon_ifa_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -360,7 +406,7 @@ func (x *SimilarityHit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SimilarityHit.ProtoReflect.Descriptor instead.
 func (*SimilarityHit) Descriptor() ([]byte, []int) {
-	return file_similarity_hit_proto_rawDescGZIP(), []int{3}
+	return file_opon_ifa_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SimilarityHit) GetAnchor() *MarketInfo {
@@ -380,7 +426,7 @@ func (x *SimilarityHit) GetMatches() []*MatchCandidate {
 type Discovery struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	MarketInfo    *MarketInfo            `protobuf:"bytes,1,opt,name=market_info,json=marketInfo,proto3" json:"market_info,omitempty"`
-	Leg           Leg                    `protobuf:"varint,2,opt,name=leg,proto3,enum=similarityhit.Leg" json:"leg,omitempty"`
+	Leg           Leg                    `protobuf:"varint,2,opt,name=leg,proto3,enum=opon_ifa.Leg" json:"leg,omitempty"`
 	LegStr        string                 `protobuf:"bytes,3,opt,name=leg_str,json=legStr,proto3" json:"leg_str,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -388,7 +434,7 @@ type Discovery struct {
 
 func (x *Discovery) Reset() {
 	*x = Discovery{}
-	mi := &file_similarity_hit_proto_msgTypes[4]
+	mi := &file_opon_ifa_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -400,7 +446,7 @@ func (x *Discovery) String() string {
 func (*Discovery) ProtoMessage() {}
 
 func (x *Discovery) ProtoReflect() protoreflect.Message {
-	mi := &file_similarity_hit_proto_msgTypes[4]
+	mi := &file_opon_ifa_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -413,7 +459,7 @@ func (x *Discovery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Discovery.ProtoReflect.Descriptor instead.
 func (*Discovery) Descriptor() ([]byte, []int) {
-	return file_similarity_hit_proto_rawDescGZIP(), []int{4}
+	return file_opon_ifa_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Discovery) GetMarketInfo() *MarketInfo {
@@ -448,7 +494,7 @@ type DiscoveredArb struct {
 
 func (x *DiscoveredArb) Reset() {
 	*x = DiscoveredArb{}
-	mi := &file_similarity_hit_proto_msgTypes[5]
+	mi := &file_opon_ifa_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -460,7 +506,7 @@ func (x *DiscoveredArb) String() string {
 func (*DiscoveredArb) ProtoMessage() {}
 
 func (x *DiscoveredArb) ProtoReflect() protoreflect.Message {
-	mi := &file_similarity_hit_proto_msgTypes[5]
+	mi := &file_opon_ifa_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -473,7 +519,7 @@ func (x *DiscoveredArb) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoveredArb.ProtoReflect.Descriptor instead.
 func (*DiscoveredArb) Descriptor() ([]byte, []int) {
-	return file_similarity_hit_proto_rawDescGZIP(), []int{5}
+	return file_opon_ifa_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *DiscoveredArb) GetAnchor() *Discovery {
@@ -506,7 +552,7 @@ type DiscoveredArbList struct {
 
 func (x *DiscoveredArbList) Reset() {
 	*x = DiscoveredArbList{}
-	mi := &file_similarity_hit_proto_msgTypes[6]
+	mi := &file_opon_ifa_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -518,7 +564,7 @@ func (x *DiscoveredArbList) String() string {
 func (*DiscoveredArbList) ProtoMessage() {}
 
 func (x *DiscoveredArbList) ProtoReflect() protoreflect.Message {
-	mi := &file_similarity_hit_proto_msgTypes[6]
+	mi := &file_opon_ifa_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -531,7 +577,7 @@ func (x *DiscoveredArbList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoveredArbList.ProtoReflect.Descriptor instead.
 func (*DiscoveredArbList) Descriptor() ([]byte, []int) {
-	return file_similarity_hit_proto_rawDescGZIP(), []int{6}
+	return file_opon_ifa_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DiscoveredArbList) GetArbs() []*DiscoveredArb {
@@ -551,7 +597,7 @@ type ArbEssentials struct {
 
 func (x *ArbEssentials) Reset() {
 	*x = ArbEssentials{}
-	mi := &file_similarity_hit_proto_msgTypes[7]
+	mi := &file_opon_ifa_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -563,7 +609,7 @@ func (x *ArbEssentials) String() string {
 func (*ArbEssentials) ProtoMessage() {}
 
 func (x *ArbEssentials) ProtoReflect() protoreflect.Message {
-	mi := &file_similarity_hit_proto_msgTypes[7]
+	mi := &file_opon_ifa_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -576,7 +622,7 @@ func (x *ArbEssentials) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArbEssentials.ProtoReflect.Descriptor instead.
 func (*ArbEssentials) Descriptor() ([]byte, []int) {
-	return file_similarity_hit_proto_rawDescGZIP(), []int{7}
+	return file_opon_ifa_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ArbEssentials) GetDiscovery() *Discovery {
@@ -604,7 +650,7 @@ type Arb struct {
 
 func (x *Arb) Reset() {
 	*x = Arb{}
-	mi := &file_similarity_hit_proto_msgTypes[8]
+	mi := &file_opon_ifa_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -616,7 +662,7 @@ func (x *Arb) String() string {
 func (*Arb) ProtoMessage() {}
 
 func (x *Arb) ProtoReflect() protoreflect.Message {
-	mi := &file_similarity_hit_proto_msgTypes[8]
+	mi := &file_opon_ifa_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -629,7 +675,7 @@ func (x *Arb) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Arb.ProtoReflect.Descriptor instead.
 func (*Arb) Descriptor() ([]byte, []int) {
-	return file_similarity_hit_proto_rawDescGZIP(), []int{8}
+	return file_opon_ifa_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Arb) GetAnchor() *ArbEssentials {
@@ -653,6 +699,147 @@ func (x *Arb) GetScored() float32 {
 	return 0
 }
 
+type Arbs struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CorrelationIds  []string               `protobuf:"bytes,1,rep,name=correlation_ids,json=correlationIds,proto3" json:"correlation_ids,omitempty"`
+	ConfirmedAndRun []*Arb                 `protobuf:"bytes,2,rep,name=confirmed_and_run,json=confirmedAndRun,proto3" json:"confirmed_and_run,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *Arbs) Reset() {
+	*x = Arbs{}
+	mi := &file_opon_ifa_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Arbs) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Arbs) ProtoMessage() {}
+
+func (x *Arbs) ProtoReflect() protoreflect.Message {
+	mi := &file_opon_ifa_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Arbs.ProtoReflect.Descriptor instead.
+func (*Arbs) Descriptor() ([]byte, []int) {
+	return file_opon_ifa_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *Arbs) GetCorrelationIds() []string {
+	if x != nil {
+		return x.CorrelationIds
+	}
+	return nil
+}
+
+func (x *Arbs) GetConfirmedAndRun() []*Arb {
+	if x != nil {
+		return x.ConfirmedAndRun
+	}
+	return nil
+}
+
+// client(Rust) asks the server(Go) for confirmed arbs
+type RunningArbsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ArbType       ArbType                `protobuf:"varint,1,opt,name=arb_type,json=arbType,proto3,enum=opon_ifa.ArbType" json:"arb_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunningArbsRequest) Reset() {
+	*x = RunningArbsRequest{}
+	mi := &file_opon_ifa_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunningArbsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunningArbsRequest) ProtoMessage() {}
+
+func (x *RunningArbsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_opon_ifa_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunningArbsRequest.ProtoReflect.Descriptor instead.
+func (*RunningArbsRequest) Descriptor() ([]byte, []int) {
+	return file_opon_ifa_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RunningArbsRequest) GetArbType() ArbType {
+	if x != nil {
+		return x.ArbType
+	}
+	return ArbType_CROSS_PLATFORM
+}
+
+type DeleteRunningArbRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CorrelationIds []string               `protobuf:"bytes,1,rep,name=correlation_ids,json=correlationIds,proto3" json:"correlation_ids,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DeleteRunningArbRequest) Reset() {
+	*x = DeleteRunningArbRequest{}
+	mi := &file_opon_ifa_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteRunningArbRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteRunningArbRequest) ProtoMessage() {}
+
+func (x *DeleteRunningArbRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_opon_ifa_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteRunningArbRequest.ProtoReflect.Descriptor instead.
+func (*DeleteRunningArbRequest) Descriptor() ([]byte, []int) {
+	return file_opon_ifa_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *DeleteRunningArbRequest) GetCorrelationIds() []string {
+	if x != nil {
+		return x.CorrelationIds
+	}
+	return nil
+}
+
 type ClientEbo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CorrelationId string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
@@ -663,6 +850,8 @@ type ClientEbo struct {
 	//	*ClientEbo_IntraPlatformHit
 	//	*ClientEbo_CrossPlatformArb
 	//	*ClientEbo_IntraPlatformArb
+	//	*ClientEbo_GetRunningArbs
+	//	*ClientEbo_DeleteRunningArbs
 	Action        isClientEbo_Action `protobuf_oneof:"action"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -670,7 +859,7 @@ type ClientEbo struct {
 
 func (x *ClientEbo) Reset() {
 	*x = ClientEbo{}
-	mi := &file_similarity_hit_proto_msgTypes[9]
+	mi := &file_opon_ifa_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -682,7 +871,7 @@ func (x *ClientEbo) String() string {
 func (*ClientEbo) ProtoMessage() {}
 
 func (x *ClientEbo) ProtoReflect() protoreflect.Message {
-	mi := &file_similarity_hit_proto_msgTypes[9]
+	mi := &file_opon_ifa_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -695,7 +884,7 @@ func (x *ClientEbo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientEbo.ProtoReflect.Descriptor instead.
 func (*ClientEbo) Descriptor() ([]byte, []int) {
-	return file_similarity_hit_proto_rawDescGZIP(), []int{9}
+	return file_opon_ifa_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ClientEbo) GetCorrelationId() string {
@@ -755,6 +944,24 @@ func (x *ClientEbo) GetIntraPlatformArb() *Arb {
 	return nil
 }
 
+func (x *ClientEbo) GetGetRunningArbs() *RunningArbsRequest {
+	if x != nil {
+		if x, ok := x.Action.(*ClientEbo_GetRunningArbs); ok {
+			return x.GetRunningArbs
+		}
+	}
+	return nil
+}
+
+func (x *ClientEbo) GetDeleteRunningArbs() *DeleteRunningArbRequest {
+	if x != nil {
+		if x, ok := x.Action.(*ClientEbo_DeleteRunningArbs); ok {
+			return x.DeleteRunningArbs
+		}
+	}
+	return nil
+}
+
 type isClientEbo_Action interface {
 	isClientEbo_Action()
 }
@@ -775,6 +982,14 @@ type ClientEbo_IntraPlatformArb struct {
 	IntraPlatformArb *Arb `protobuf:"bytes,6,opt,name=intra_platform_arb,json=intraPlatformArb,proto3,oneof"`
 }
 
+type ClientEbo_GetRunningArbs struct {
+	GetRunningArbs *RunningArbsRequest `protobuf:"bytes,7,opt,name=get_running_arbs,json=getRunningArbs,proto3,oneof"`
+}
+
+type ClientEbo_DeleteRunningArbs struct {
+	DeleteRunningArbs *DeleteRunningArbRequest `protobuf:"bytes,8,opt,name=delete_running_arbs,json=deleteRunningArbs,proto3,oneof"`
+}
+
 func (*ClientEbo_CrossPlatformHit) isClientEbo_Action() {}
 
 func (*ClientEbo_IntraPlatformHit) isClientEbo_Action() {}
@@ -782,6 +997,10 @@ func (*ClientEbo_IntraPlatformHit) isClientEbo_Action() {}
 func (*ClientEbo_CrossPlatformArb) isClientEbo_Action() {}
 
 func (*ClientEbo_IntraPlatformArb) isClientEbo_Action() {}
+
+func (*ClientEbo_GetRunningArbs) isClientEbo_Action() {}
+
+func (*ClientEbo_DeleteRunningArbs) isClientEbo_Action() {}
 
 type ServerEbo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -792,6 +1011,8 @@ type ServerEbo struct {
 	//	*ServerEbo_CrossPlatformArbDiscovery
 	//	*ServerEbo_IntraPlatformArbDiscovery
 	//	*ServerEbo_ConfirmedAndRun
+	//	*ServerEbo_RunningArbsResponse
+	//	*ServerEbo_DeleteRunningArbs
 	Action        isServerEbo_Action `protobuf_oneof:"action"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -799,7 +1020,7 @@ type ServerEbo struct {
 
 func (x *ServerEbo) Reset() {
 	*x = ServerEbo{}
-	mi := &file_similarity_hit_proto_msgTypes[10]
+	mi := &file_opon_ifa_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -811,7 +1032,7 @@ func (x *ServerEbo) String() string {
 func (*ServerEbo) ProtoMessage() {}
 
 func (x *ServerEbo) ProtoReflect() protoreflect.Message {
-	mi := &file_similarity_hit_proto_msgTypes[10]
+	mi := &file_opon_ifa_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -824,7 +1045,7 @@ func (x *ServerEbo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerEbo.ProtoReflect.Descriptor instead.
 func (*ServerEbo) Descriptor() ([]byte, []int) {
-	return file_similarity_hit_proto_rawDescGZIP(), []int{10}
+	return file_opon_ifa_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ServerEbo) GetCorrelationId() string {
@@ -875,6 +1096,24 @@ func (x *ServerEbo) GetConfirmedAndRun() *Arb {
 	return nil
 }
 
+func (x *ServerEbo) GetRunningArbsResponse() *Arbs {
+	if x != nil {
+		if x, ok := x.Action.(*ServerEbo_RunningArbsResponse); ok {
+			return x.RunningArbsResponse
+		}
+	}
+	return nil
+}
+
+func (x *ServerEbo) GetDeleteRunningArbs() *DeleteRunningArbRequest {
+	if x != nil {
+		if x, ok := x.Action.(*ServerEbo_DeleteRunningArbs); ok {
+			return x.DeleteRunningArbs
+		}
+	}
+	return nil
+}
+
 type isServerEbo_Action interface {
 	isServerEbo_Action()
 }
@@ -891,17 +1130,29 @@ type ServerEbo_ConfirmedAndRun struct {
 	ConfirmedAndRun *Arb `protobuf:"bytes,5,opt,name=confirmed_and_run,json=confirmedAndRun,proto3,oneof"`
 }
 
+type ServerEbo_RunningArbsResponse struct {
+	RunningArbsResponse *Arbs `protobuf:"bytes,6,opt,name=running_arbs_response,json=runningArbsResponse,proto3,oneof"`
+}
+
+type ServerEbo_DeleteRunningArbs struct {
+	DeleteRunningArbs *DeleteRunningArbRequest `protobuf:"bytes,7,opt,name=delete_running_arbs,json=deleteRunningArbs,proto3,oneof"`
+}
+
 func (*ServerEbo_CrossPlatformArbDiscovery) isServerEbo_Action() {}
 
 func (*ServerEbo_IntraPlatformArbDiscovery) isServerEbo_Action() {}
 
 func (*ServerEbo_ConfirmedAndRun) isServerEbo_Action() {}
 
-var File_similarity_hit_proto protoreflect.FileDescriptor
+func (*ServerEbo_RunningArbsResponse) isServerEbo_Action() {}
 
-const file_similarity_hit_proto_rawDesc = "" +
+func (*ServerEbo_DeleteRunningArbs) isServerEbo_Action() {}
+
+var File_opon_ifa_proto protoreflect.FileDescriptor
+
+const file_opon_ifa_proto_rawDesc = "" +
 	"\n" +
-	"\x14similarity_hit.proto\x12\rsimilarityhit\"\xba\x02\n" +
+	"\x0eopon_ifa.proto\x12\bopon_ifa\"\xb5\x02\n" +
 	"\n" +
 	"MarketInfo\x12\x12\n" +
 	"\x04uuid\x18\x01 \x01(\tR\x04uuid\x12\x1b\n" +
@@ -911,52 +1162,63 @@ const file_similarity_hit_proto_rawDesc = "" +
 	"\x05rules\x18\x05 \x01(\tR\x05rules\x12'\n" +
 	"\x0fmarket_category\x18\x06 \x01(\tR\x0emarketCategory\x12-\n" +
 	"\x12market_subcategory\x18\a \x01(\tR\x11marketSubcategory\x12\"\n" +
-	"\rclose_time_ms\x18\b \x01(\x03R\vcloseTimeMs\x123\n" +
-	"\bplatform\x18\t \x01(\x0e2\x17.similarityhit.PlatformR\bplatform\"y\n" +
-	"\rQdrantPayload\x12:\n" +
-	"\vmarket_info\x18\x01 \x01(\v2\x19.similarityhit.MarketInfoR\n" +
+	"\rclose_time_ms\x18\b \x01(\x03R\vcloseTimeMs\x12.\n" +
+	"\bplatform\x18\t \x01(\x0e2\x12.opon_ifa.PlatformR\bplatform\"t\n" +
+	"\rQdrantPayload\x125\n" +
+	"\vmarket_info\x18\x01 \x01(\v2\x14.opon_ifa.MarketInfoR\n" +
 	"marketInfo\x12,\n" +
 	"\x12qdrant_inserted_at\x18\n" +
-	" \x01(\x03R\x10qdrantInsertedAt\"d\n" +
+	" \x01(\x03R\x10qdrantInsertedAt\"_\n" +
 	"\x0eMatchCandidate\x12\x16\n" +
-	"\x06scored\x18\x01 \x01(\x02R\x06scored\x12:\n" +
-	"\vmarket_info\x18\x02 \x01(\v2\x19.similarityhit.MarketInfoR\n" +
-	"marketInfo\"{\n" +
-	"\rSimilarityHit\x121\n" +
-	"\x06anchor\x18\x01 \x01(\v2\x19.similarityhit.MarketInfoR\x06anchor\x127\n" +
-	"\amatches\x18\x02 \x03(\v2\x1d.similarityhit.MatchCandidateR\amatches\"\x86\x01\n" +
-	"\tDiscovery\x12:\n" +
-	"\vmarket_info\x18\x01 \x01(\v2\x19.similarityhit.MarketInfoR\n" +
-	"marketInfo\x12$\n" +
-	"\x03leg\x18\x02 \x01(\x0e2\x12.similarityhit.LegR\x03leg\x12\x17\n" +
-	"\aleg_str\x18\x03 \x01(\tR\x06legStr\"\x89\x01\n" +
-	"\rDiscoveredArb\x120\n" +
-	"\x06anchor\x18\x01 \x01(\v2\x18.similarityhit.DiscoveryR\x06anchor\x12.\n" +
-	"\x05match\x18\x02 \x01(\v2\x18.similarityhit.DiscoveryR\x05match\x12\x16\n" +
-	"\x06scored\x18\x03 \x01(\x02R\x06scored\"E\n" +
-	"\x11DiscoveredArbList\x120\n" +
-	"\x04arbs\x18\x01 \x03(\v2\x1c.similarityhit.DiscoveredArbR\x04arbs\"b\n" +
-	"\rArbEssentials\x126\n" +
-	"\tdiscovery\x18\x01 \x01(\v2\x18.similarityhit.DiscoveryR\tdiscovery\x12\x19\n" +
-	"\btoken_id\x18\x02 \x01(\tR\atokenId\"\x87\x01\n" +
-	"\x03Arb\x124\n" +
-	"\x06anchor\x18\x01 \x01(\v2\x1c.similarityhit.ArbEssentialsR\x06anchor\x122\n" +
-	"\x05match\x18\x02 \x01(\v2\x1c.similarityhit.ArbEssentialsR\x05match\x12\x16\n" +
-	"\x06scored\x18\x03 \x01(\x02R\x06scored\"\xfb\x02\n" +
+	"\x06scored\x18\x01 \x01(\x02R\x06scored\x125\n" +
+	"\vmarket_info\x18\x02 \x01(\v2\x14.opon_ifa.MarketInfoR\n" +
+	"marketInfo\"q\n" +
+	"\rSimilarityHit\x12,\n" +
+	"\x06anchor\x18\x01 \x01(\v2\x14.opon_ifa.MarketInfoR\x06anchor\x122\n" +
+	"\amatches\x18\x02 \x03(\v2\x18.opon_ifa.MatchCandidateR\amatches\"|\n" +
+	"\tDiscovery\x125\n" +
+	"\vmarket_info\x18\x01 \x01(\v2\x14.opon_ifa.MarketInfoR\n" +
+	"marketInfo\x12\x1f\n" +
+	"\x03leg\x18\x02 \x01(\x0e2\r.opon_ifa.LegR\x03leg\x12\x17\n" +
+	"\aleg_str\x18\x03 \x01(\tR\x06legStr\"\x7f\n" +
+	"\rDiscoveredArb\x12+\n" +
+	"\x06anchor\x18\x01 \x01(\v2\x13.opon_ifa.DiscoveryR\x06anchor\x12)\n" +
+	"\x05match\x18\x02 \x01(\v2\x13.opon_ifa.DiscoveryR\x05match\x12\x16\n" +
+	"\x06scored\x18\x03 \x01(\x02R\x06scored\"@\n" +
+	"\x11DiscoveredArbList\x12+\n" +
+	"\x04arbs\x18\x01 \x03(\v2\x17.opon_ifa.DiscoveredArbR\x04arbs\"]\n" +
+	"\rArbEssentials\x121\n" +
+	"\tdiscovery\x18\x01 \x01(\v2\x13.opon_ifa.DiscoveryR\tdiscovery\x12\x19\n" +
+	"\btoken_id\x18\x02 \x01(\tR\atokenId\"}\n" +
+	"\x03Arb\x12/\n" +
+	"\x06anchor\x18\x01 \x01(\v2\x17.opon_ifa.ArbEssentialsR\x06anchor\x12-\n" +
+	"\x05match\x18\x02 \x01(\v2\x17.opon_ifa.ArbEssentialsR\x05match\x12\x16\n" +
+	"\x06scored\x18\x03 \x01(\x02R\x06scored\"j\n" +
+	"\x04Arbs\x12'\n" +
+	"\x0fcorrelation_ids\x18\x01 \x03(\tR\x0ecorrelationIds\x129\n" +
+	"\x11confirmed_and_run\x18\x02 \x03(\v2\r.opon_ifa.ArbR\x0fconfirmedAndRun\"B\n" +
+	"\x12RunningArbsRequest\x12,\n" +
+	"\barb_type\x18\x01 \x01(\x0e2\x11.opon_ifa.ArbTypeR\aarbType\"B\n" +
+	"\x17DeleteRunningArbRequest\x12'\n" +
+	"\x0fcorrelation_ids\x18\x01 \x03(\tR\x0ecorrelationIds\"\x86\x04\n" +
 	"\tClientEbo\x12%\n" +
 	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x19\n" +
-	"\bfound_at\x18\x02 \x01(\x03R\afoundAt\x12L\n" +
-	"\x12cross_platform_hit\x18\x03 \x01(\v2\x1c.similarityhit.SimilarityHitH\x00R\x10crossPlatformHit\x12L\n" +
-	"\x12intra_platform_hit\x18\x04 \x01(\v2\x1c.similarityhit.SimilarityHitH\x00R\x10intraPlatformHit\x12B\n" +
-	"\x12cross_platform_arb\x18\x05 \x01(\v2\x12.similarityhit.ArbH\x00R\x10crossPlatformArb\x12B\n" +
-	"\x12intra_platform_arb\x18\x06 \x01(\v2\x12.similarityhit.ArbH\x00R\x10intraPlatformArbB\b\n" +
-	"\x06action\"\xe3\x02\n" +
+	"\bfound_at\x18\x02 \x01(\x03R\afoundAt\x12G\n" +
+	"\x12cross_platform_hit\x18\x03 \x01(\v2\x17.opon_ifa.SimilarityHitH\x00R\x10crossPlatformHit\x12G\n" +
+	"\x12intra_platform_hit\x18\x04 \x01(\v2\x17.opon_ifa.SimilarityHitH\x00R\x10intraPlatformHit\x12=\n" +
+	"\x12cross_platform_arb\x18\x05 \x01(\v2\r.opon_ifa.ArbH\x00R\x10crossPlatformArb\x12=\n" +
+	"\x12intra_platform_arb\x18\x06 \x01(\v2\r.opon_ifa.ArbH\x00R\x10intraPlatformArb\x12H\n" +
+	"\x10get_running_arbs\x18\a \x01(\v2\x1c.opon_ifa.RunningArbsRequestH\x00R\x0egetRunningArbs\x12S\n" +
+	"\x13delete_running_arbs\x18\b \x01(\v2!.opon_ifa.DeleteRunningArbRequestH\x00R\x11deleteRunningArbsB\b\n" +
+	"\x06action\"\xef\x03\n" +
 	"\tServerEbo\x12%\n" +
 	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x19\n" +
-	"\bfound_at\x18\x02 \x01(\x03R\afoundAt\x12c\n" +
-	"\x1ccross_platform_arb_discovery\x18\x03 \x01(\v2 .similarityhit.DiscoveredArbListH\x00R\x19crossPlatformArbDiscovery\x12c\n" +
-	"\x1cintra_platform_arb_discovery\x18\x04 \x01(\v2 .similarityhit.DiscoveredArbListH\x00R\x19intraPlatformArbDiscovery\x12@\n" +
-	"\x11confirmed_and_run\x18\x05 \x01(\v2\x12.similarityhit.ArbH\x00R\x0fconfirmedAndRunB\b\n" +
+	"\bfound_at\x18\x02 \x01(\x03R\afoundAt\x12^\n" +
+	"\x1ccross_platform_arb_discovery\x18\x03 \x01(\v2\x1b.opon_ifa.DiscoveredArbListH\x00R\x19crossPlatformArbDiscovery\x12^\n" +
+	"\x1cintra_platform_arb_discovery\x18\x04 \x01(\v2\x1b.opon_ifa.DiscoveredArbListH\x00R\x19intraPlatformArbDiscovery\x12;\n" +
+	"\x11confirmed_and_run\x18\x05 \x01(\v2\r.opon_ifa.ArbH\x00R\x0fconfirmedAndRun\x12D\n" +
+	"\x15running_arbs_response\x18\x06 \x01(\v2\x0e.opon_ifa.ArbsH\x00R\x13runningArbsResponse\x12S\n" +
+	"\x13delete_running_arbs\x18\a \x01(\v2!.opon_ifa.DeleteRunningArbRequestH\x00R\x11deleteRunningArbsB\b\n" +
 	"\x06action*&\n" +
 	"\bPlatform\x12\x0e\n" +
 	"\n" +
@@ -965,101 +1227,118 @@ const file_similarity_hit_proto_rawDesc = "" +
 	"\x06KALSHI\x10\x01*\"\n" +
 	"\x03Leg\x12\f\n" +
 	"\bLEG_LEFT\x10\x00\x12\r\n" +
-	"\tLEG_RIGHT\x10\x012I\n" +
-	"\bEsuOdara\x12=\n" +
-	"\x03Esu\x12\x18.similarityhit.ClientEbo\x1a\x18.similarityhit.ServerEbo(\x010\x01B\rZ\vweb/protos;b\x06proto3"
+	"\tLEG_RIGHT\x10\x01*1\n" +
+	"\aArbType\x12\x12\n" +
+	"\x0eCROSS_PLATFORM\x10\x00\x12\x12\n" +
+	"\x0eINTRA_PLATFORM\x10\x012?\n" +
+	"\bEsuOdara\x123\n" +
+	"\x03Esu\x12\x13.opon_ifa.ClientEbo\x1a\x13.opon_ifa.ServerEbo(\x010\x01B\rZ\vweb/protos;b\x06proto3"
 
 var (
-	file_similarity_hit_proto_rawDescOnce sync.Once
-	file_similarity_hit_proto_rawDescData []byte
+	file_opon_ifa_proto_rawDescOnce sync.Once
+	file_opon_ifa_proto_rawDescData []byte
 )
 
-func file_similarity_hit_proto_rawDescGZIP() []byte {
-	file_similarity_hit_proto_rawDescOnce.Do(func() {
-		file_similarity_hit_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_similarity_hit_proto_rawDesc), len(file_similarity_hit_proto_rawDesc)))
+func file_opon_ifa_proto_rawDescGZIP() []byte {
+	file_opon_ifa_proto_rawDescOnce.Do(func() {
+		file_opon_ifa_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_opon_ifa_proto_rawDesc), len(file_opon_ifa_proto_rawDesc)))
 	})
-	return file_similarity_hit_proto_rawDescData
+	return file_opon_ifa_proto_rawDescData
 }
 
-var file_similarity_hit_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_similarity_hit_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
-var file_similarity_hit_proto_goTypes = []any{
-	(Platform)(0),             // 0: similarityhit.Platform
-	(Leg)(0),                  // 1: similarityhit.Leg
-	(*MarketInfo)(nil),        // 2: similarityhit.MarketInfo
-	(*QdrantPayload)(nil),     // 3: similarityhit.QdrantPayload
-	(*MatchCandidate)(nil),    // 4: similarityhit.MatchCandidate
-	(*SimilarityHit)(nil),     // 5: similarityhit.SimilarityHit
-	(*Discovery)(nil),         // 6: similarityhit.Discovery
-	(*DiscoveredArb)(nil),     // 7: similarityhit.DiscoveredArb
-	(*DiscoveredArbList)(nil), // 8: similarityhit.DiscoveredArbList
-	(*ArbEssentials)(nil),     // 9: similarityhit.ArbEssentials
-	(*Arb)(nil),               // 10: similarityhit.Arb
-	(*ClientEbo)(nil),         // 11: similarityhit.ClientEbo
-	(*ServerEbo)(nil),         // 12: similarityhit.ServerEbo
+var file_opon_ifa_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_opon_ifa_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_opon_ifa_proto_goTypes = []any{
+	(Platform)(0),                   // 0: opon_ifa.Platform
+	(Leg)(0),                        // 1: opon_ifa.Leg
+	(ArbType)(0),                    // 2: opon_ifa.ArbType
+	(*MarketInfo)(nil),              // 3: opon_ifa.MarketInfo
+	(*QdrantPayload)(nil),           // 4: opon_ifa.QdrantPayload
+	(*MatchCandidate)(nil),          // 5: opon_ifa.MatchCandidate
+	(*SimilarityHit)(nil),           // 6: opon_ifa.SimilarityHit
+	(*Discovery)(nil),               // 7: opon_ifa.Discovery
+	(*DiscoveredArb)(nil),           // 8: opon_ifa.DiscoveredArb
+	(*DiscoveredArbList)(nil),       // 9: opon_ifa.DiscoveredArbList
+	(*ArbEssentials)(nil),           // 10: opon_ifa.ArbEssentials
+	(*Arb)(nil),                     // 11: opon_ifa.Arb
+	(*Arbs)(nil),                    // 12: opon_ifa.Arbs
+	(*RunningArbsRequest)(nil),      // 13: opon_ifa.RunningArbsRequest
+	(*DeleteRunningArbRequest)(nil), // 14: opon_ifa.DeleteRunningArbRequest
+	(*ClientEbo)(nil),               // 15: opon_ifa.ClientEbo
+	(*ServerEbo)(nil),               // 16: opon_ifa.ServerEbo
 }
-var file_similarity_hit_proto_depIdxs = []int32{
-	0,  // 0: similarityhit.MarketInfo.platform:type_name -> similarityhit.Platform
-	2,  // 1: similarityhit.QdrantPayload.market_info:type_name -> similarityhit.MarketInfo
-	2,  // 2: similarityhit.MatchCandidate.market_info:type_name -> similarityhit.MarketInfo
-	2,  // 3: similarityhit.SimilarityHit.anchor:type_name -> similarityhit.MarketInfo
-	4,  // 4: similarityhit.SimilarityHit.matches:type_name -> similarityhit.MatchCandidate
-	2,  // 5: similarityhit.Discovery.market_info:type_name -> similarityhit.MarketInfo
-	1,  // 6: similarityhit.Discovery.leg:type_name -> similarityhit.Leg
-	6,  // 7: similarityhit.DiscoveredArb.anchor:type_name -> similarityhit.Discovery
-	6,  // 8: similarityhit.DiscoveredArb.match:type_name -> similarityhit.Discovery
-	7,  // 9: similarityhit.DiscoveredArbList.arbs:type_name -> similarityhit.DiscoveredArb
-	6,  // 10: similarityhit.ArbEssentials.discovery:type_name -> similarityhit.Discovery
-	9,  // 11: similarityhit.Arb.anchor:type_name -> similarityhit.ArbEssentials
-	9,  // 12: similarityhit.Arb.match:type_name -> similarityhit.ArbEssentials
-	5,  // 13: similarityhit.ClientEbo.cross_platform_hit:type_name -> similarityhit.SimilarityHit
-	5,  // 14: similarityhit.ClientEbo.intra_platform_hit:type_name -> similarityhit.SimilarityHit
-	10, // 15: similarityhit.ClientEbo.cross_platform_arb:type_name -> similarityhit.Arb
-	10, // 16: similarityhit.ClientEbo.intra_platform_arb:type_name -> similarityhit.Arb
-	8,  // 17: similarityhit.ServerEbo.cross_platform_arb_discovery:type_name -> similarityhit.DiscoveredArbList
-	8,  // 18: similarityhit.ServerEbo.intra_platform_arb_discovery:type_name -> similarityhit.DiscoveredArbList
-	10, // 19: similarityhit.ServerEbo.confirmed_and_run:type_name -> similarityhit.Arb
-	11, // 20: similarityhit.EsuOdara.Esu:input_type -> similarityhit.ClientEbo
-	12, // 21: similarityhit.EsuOdara.Esu:output_type -> similarityhit.ServerEbo
-	21, // [21:22] is the sub-list for method output_type
-	20, // [20:21] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+var file_opon_ifa_proto_depIdxs = []int32{
+	0,  // 0: opon_ifa.MarketInfo.platform:type_name -> opon_ifa.Platform
+	3,  // 1: opon_ifa.QdrantPayload.market_info:type_name -> opon_ifa.MarketInfo
+	3,  // 2: opon_ifa.MatchCandidate.market_info:type_name -> opon_ifa.MarketInfo
+	3,  // 3: opon_ifa.SimilarityHit.anchor:type_name -> opon_ifa.MarketInfo
+	5,  // 4: opon_ifa.SimilarityHit.matches:type_name -> opon_ifa.MatchCandidate
+	3,  // 5: opon_ifa.Discovery.market_info:type_name -> opon_ifa.MarketInfo
+	1,  // 6: opon_ifa.Discovery.leg:type_name -> opon_ifa.Leg
+	7,  // 7: opon_ifa.DiscoveredArb.anchor:type_name -> opon_ifa.Discovery
+	7,  // 8: opon_ifa.DiscoveredArb.match:type_name -> opon_ifa.Discovery
+	8,  // 9: opon_ifa.DiscoveredArbList.arbs:type_name -> opon_ifa.DiscoveredArb
+	7,  // 10: opon_ifa.ArbEssentials.discovery:type_name -> opon_ifa.Discovery
+	10, // 11: opon_ifa.Arb.anchor:type_name -> opon_ifa.ArbEssentials
+	10, // 12: opon_ifa.Arb.match:type_name -> opon_ifa.ArbEssentials
+	11, // 13: opon_ifa.Arbs.confirmed_and_run:type_name -> opon_ifa.Arb
+	2,  // 14: opon_ifa.RunningArbsRequest.arb_type:type_name -> opon_ifa.ArbType
+	6,  // 15: opon_ifa.ClientEbo.cross_platform_hit:type_name -> opon_ifa.SimilarityHit
+	6,  // 16: opon_ifa.ClientEbo.intra_platform_hit:type_name -> opon_ifa.SimilarityHit
+	11, // 17: opon_ifa.ClientEbo.cross_platform_arb:type_name -> opon_ifa.Arb
+	11, // 18: opon_ifa.ClientEbo.intra_platform_arb:type_name -> opon_ifa.Arb
+	13, // 19: opon_ifa.ClientEbo.get_running_arbs:type_name -> opon_ifa.RunningArbsRequest
+	14, // 20: opon_ifa.ClientEbo.delete_running_arbs:type_name -> opon_ifa.DeleteRunningArbRequest
+	9,  // 21: opon_ifa.ServerEbo.cross_platform_arb_discovery:type_name -> opon_ifa.DiscoveredArbList
+	9,  // 22: opon_ifa.ServerEbo.intra_platform_arb_discovery:type_name -> opon_ifa.DiscoveredArbList
+	11, // 23: opon_ifa.ServerEbo.confirmed_and_run:type_name -> opon_ifa.Arb
+	12, // 24: opon_ifa.ServerEbo.running_arbs_response:type_name -> opon_ifa.Arbs
+	14, // 25: opon_ifa.ServerEbo.delete_running_arbs:type_name -> opon_ifa.DeleteRunningArbRequest
+	15, // 26: opon_ifa.EsuOdara.Esu:input_type -> opon_ifa.ClientEbo
+	16, // 27: opon_ifa.EsuOdara.Esu:output_type -> opon_ifa.ServerEbo
+	27, // [27:28] is the sub-list for method output_type
+	26, // [26:27] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
-func init() { file_similarity_hit_proto_init() }
-func file_similarity_hit_proto_init() {
-	if File_similarity_hit_proto != nil {
+func init() { file_opon_ifa_proto_init() }
+func file_opon_ifa_proto_init() {
+	if File_opon_ifa_proto != nil {
 		return
 	}
-	file_similarity_hit_proto_msgTypes[9].OneofWrappers = []any{
+	file_opon_ifa_proto_msgTypes[12].OneofWrappers = []any{
 		(*ClientEbo_CrossPlatformHit)(nil),
 		(*ClientEbo_IntraPlatformHit)(nil),
 		(*ClientEbo_CrossPlatformArb)(nil),
 		(*ClientEbo_IntraPlatformArb)(nil),
+		(*ClientEbo_GetRunningArbs)(nil),
+		(*ClientEbo_DeleteRunningArbs)(nil),
 	}
-	file_similarity_hit_proto_msgTypes[10].OneofWrappers = []any{
+	file_opon_ifa_proto_msgTypes[13].OneofWrappers = []any{
 		(*ServerEbo_CrossPlatformArbDiscovery)(nil),
 		(*ServerEbo_IntraPlatformArbDiscovery)(nil),
 		(*ServerEbo_ConfirmedAndRun)(nil),
+		(*ServerEbo_RunningArbsResponse)(nil),
+		(*ServerEbo_DeleteRunningArbs)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_similarity_hit_proto_rawDesc), len(file_similarity_hit_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   11,
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_opon_ifa_proto_rawDesc), len(file_opon_ifa_proto_rawDesc)),
+			NumEnums:      3,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_similarity_hit_proto_goTypes,
-		DependencyIndexes: file_similarity_hit_proto_depIdxs,
-		EnumInfos:         file_similarity_hit_proto_enumTypes,
-		MessageInfos:      file_similarity_hit_proto_msgTypes,
+		GoTypes:           file_opon_ifa_proto_goTypes,
+		DependencyIndexes: file_opon_ifa_proto_depIdxs,
+		EnumInfos:         file_opon_ifa_proto_enumTypes,
+		MessageInfos:      file_opon_ifa_proto_msgTypes,
 	}.Build()
-	File_similarity_hit_proto = out.File
-	file_similarity_hit_proto_goTypes = nil
-	file_similarity_hit_proto_depIdxs = nil
+	File_opon_ifa_proto = out.File
+	file_opon_ifa_proto_goTypes = nil
+	file_opon_ifa_proto_depIdxs = nil
 }

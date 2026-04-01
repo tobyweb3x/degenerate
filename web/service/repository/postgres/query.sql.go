@@ -62,16 +62,21 @@ func (q *Queries) GetArbByCorrelationID(ctx context.Context, correlationID strin
 	return i, err
 }
 
-const getRecentCrossArbs = `-- name: GetRecentCrossArbs :many
+const getRecentArbs = `-- name: GetRecentArbs :many
 SELECT id, correlation_id, found_at, arbs, confirmed, running, arb_type, created_at
 FROM arbs
-WHERE arb_type = 'cross'
+WHERE arb_type = $1
 ORDER BY created_at DESC
-LIMIT $1
+LIMIT $2
 `
 
-func (q *Queries) GetRecentCrossArbs(ctx context.Context, limit int32) ([]Arb, error) {
-	rows, err := q.db.Query(ctx, getRecentCrossArbs, limit)
+type GetRecentArbsParams struct {
+	ArbType string `json:"arb_type"`
+	Limit   int32  `json:"limit"`
+}
+
+func (q *Queries) GetRecentArbs(ctx context.Context, arg GetRecentArbsParams) ([]Arb, error) {
+	rows, err := q.db.Query(ctx, getRecentArbs, arg.ArbType, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -99,17 +104,22 @@ func (q *Queries) GetRecentCrossArbs(ctx context.Context, limit int32) ([]Arb, e
 	return items, nil
 }
 
-const getRecentCrossHits = `-- name: GetRecentCrossHits :many
+const getRecentHits = `-- name: GetRecentHits :many
 SELECT id, correlation_id, found_at, similarity_hit, arb_type, is_deleted, deleted_at, created_at
 FROM similarity_hits
-WHERE arb_type = 'cross'
+WHERE arb_type = $1
   AND is_deleted = FALSE
 ORDER BY created_at DESC
-LIMIT $1
+LIMIT $2
 `
 
-func (q *Queries) GetRecentCrossHits(ctx context.Context, limit int32) ([]SimilarityHit, error) {
-	rows, err := q.db.Query(ctx, getRecentCrossHits, limit)
+type GetRecentHitsParams struct {
+	ArbType string `json:"arb_type"`
+	Limit   int32  `json:"limit"`
+}
+
+func (q *Queries) GetRecentHits(ctx context.Context, arg GetRecentHitsParams) ([]SimilarityHit, error) {
+	rows, err := q.db.Query(ctx, getRecentHits, arg.ArbType, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -137,16 +147,15 @@ func (q *Queries) GetRecentCrossHits(ctx context.Context, limit int32) ([]Simila
 	return items, nil
 }
 
-const getRecentIntraArbs = `-- name: GetRecentIntraArbs :many
+const getRunninngArbs = `-- name: GetRunninngArbs :many
 SELECT id, correlation_id, found_at, arbs, confirmed, running, arb_type, created_at
 FROM arbs
-WHERE arb_type = 'intra'
+WHERE arb_type = $1 AND running = TRUE
 ORDER BY created_at DESC
-LIMIT $1
 `
 
-func (q *Queries) GetRecentIntraArbs(ctx context.Context, limit int32) ([]Arb, error) {
-	rows, err := q.db.Query(ctx, getRecentIntraArbs, limit)
+func (q *Queries) GetRunninngArbs(ctx context.Context, arbType string) ([]Arb, error) {
+	rows, err := q.db.Query(ctx, getRunninngArbs, arbType)
 	if err != nil {
 		return nil, err
 	}
@@ -162,44 +171,6 @@ func (q *Queries) GetRecentIntraArbs(ctx context.Context, limit int32) ([]Arb, e
 			&i.Confirmed,
 			&i.Running,
 			&i.ArbType,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getRecentIntraHits = `-- name: GetRecentIntraHits :many
-SELECT id, correlation_id, found_at, similarity_hit, arb_type, is_deleted, deleted_at, created_at
-FROM similarity_hits
-WHERE arb_type = 'intra'
-    AND is_deleted = FALSE
-ORDER BY created_at DESC
-LIMIT $1
-`
-
-func (q *Queries) GetRecentIntraHits(ctx context.Context, limit int32) ([]SimilarityHit, error) {
-	rows, err := q.db.Query(ctx, getRecentIntraHits, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SimilarityHit
-	for rows.Next() {
-		var i SimilarityHit
-		if err := rows.Scan(
-			&i.ID,
-			&i.CorrelationID,
-			&i.FoundAt,
-			&i.SimilarityHit,
-			&i.ArbType,
-			&i.IsDeleted,
-			&i.DeletedAt,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

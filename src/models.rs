@@ -12,7 +12,7 @@ use strum_macros::EnumIter;
 use uuid::Uuid;
 
 pub mod protos {
-    tonic::include_proto!("similarityhit");
+    tonic::include_proto!("opon_ifa");
 }
 
 #[allow(dead_code)]
@@ -60,16 +60,16 @@ impl QdrantPointData {
         question_vector.push_str(&market_info.question);
 
         question_vector.push(' ');
-        question_vector.push_str("Outcomes: ");
+        question_vector.push_str("Possible outcomes: ");
         question_vector.push_str(&market_info.outcome);
-        question_vector.push_str(" Category: (");
-        question_vector.push_str(&market_info.market_category);
+        // question_vector.push_str(" Category: (");
+        // question_vector.push_str(&market_info.market_category);
 
-        if !market_info.market_subcategory.is_empty() {
-            question_vector.push(':');
-            question_vector.push_str(&market_info.market_subcategory);
-        }
-        question_vector.push(')');
+        // if !market_info.market_subcategory.is_empty() {
+        //     question_vector.push(':');
+        //     question_vector.push_str(&market_info.market_subcategory);
+        // }
+        // question_vector.push(')');
 
         // tracing::info!("question vector --> {question_vector}:{}", market_info.platform);
         Ok(Self {
@@ -167,7 +167,7 @@ impl TryFrom<QdrantPointData> for qdrant::PointStruct {
     }
 }
 
-fn parse_ts_millis(s: &str) -> i64 {
+fn parse_ts_to_millis(s: &str) -> i64 {
     if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
         return dt.timestamp_millis();
     }
@@ -210,7 +210,7 @@ impl From<gamma::Market> for protos::MarketInfo {
             market_category: String::new(),
             market_subcategory: String::new(),
             platform: protos::Platform::Polymarket.into(),
-            close_time_ms: parse_ts_millis(
+            close_time_ms: parse_ts_to_millis(
                 &value.end_date_iso.or(value.end_date).unwrap_or_default(),
             ),
         }
@@ -269,7 +269,7 @@ impl From<kalshi_rs::markets::models::Market> for protos::MarketInfo {
                     ""
                 };
 
-                parse_ts_millis(ts)
+                parse_ts_to_millis(ts)
             },
         }
     }
@@ -394,6 +394,7 @@ pub enum MarketTag {
     Soccer,
     NBA,
     NFL,
+    Politics,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -419,6 +420,17 @@ impl MarketTag {
                 "101594", "1186", "102934", "10", "101673",
             ],
             (Self::NFL, protos::Platform::Kalshi) => &["Football"],
+
+            (Self::Politics, protos::Platform::Polymarket) => &[
+                "2", "596", "176", "789", "902", "100199", "144", "101206", "102788", "1597",
+                "102006", "1515", "264", "126", "103026", "102514", "102477", "230", "393",
+                "100434", "1396", "778", "828", "915", "859", "1346", "101773", "101426", "80",
+                "100783", "102810", "766", "514", "718", "1459", "1405", "1400", "247", "1337",
+                "282", "396", "538", "791", "100343", "100381", "100387", "100388",
+            ],
+            (Self::Politics, protos::Platform::Kalshi) => {
+                &["Politics", "Elections", "Companies", "Mentions"]
+            }
         }
     }
 
@@ -435,6 +447,10 @@ impl MarketTag {
             Self::NFL => MarketTagInfo {
                 market_category: "sport",
                 market_subcategory: "NFL",
+            },
+            Self::Politics => MarketTagInfo {
+                market_category: "politics",
+                market_subcategory: "Politics",
             },
         }
     }

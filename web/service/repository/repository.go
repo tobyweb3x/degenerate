@@ -26,6 +26,13 @@ func NewService(postgresDb PostgresDb) *Repository {
 	return &s
 }
 
+type ArbType string
+
+const (
+	CrossArbType ArbType = "cross"
+	IntraArbType ArbType = "intra"
+)
+
 func (r *Repository) InsertNewCrossHit(ctx context.Context, correlationId string, timestamp time.Time, similarityHit []byte) error {
 	return r.dbQuery.InsertNewSimilarityHit(ctx, postgres.InsertNewSimilarityHitParams{
 		CorrelationID: correlationId,
@@ -79,11 +86,17 @@ func (r *Repository) InsertNewIntraHit(ctx context.Context, correlationId string
 }
 
 func (r *Repository) GetRecentCrossHits(ctx context.Context) ([]postgres.SimilarityHit, error) {
-	return r.dbQuery.GetRecentCrossHits(ctx, 5_000)
+	return r.dbQuery.GetRecentHits(ctx, postgres.GetRecentHitsParams{
+		ArbType: string(CrossArbType),
+		Limit:   5_000,
+	})
 }
 
 func (r *Repository) GetRecentCrossArbs(ctx context.Context) ([]postgres.Arb, error) {
-	return r.dbQuery.GetRecentCrossArbs(ctx, 5_000)
+	return r.dbQuery.GetRecentArbs(ctx, postgres.GetRecentArbsParams{
+		ArbType: string(CrossArbType),
+		Limit:   5_000,
+	})
 }
 
 func (r *Repository) GetSimilarityHitByCorrelationID(ctx context.Context, correlationId string) (postgres.SimilarityHit, error) {
@@ -143,4 +156,8 @@ func (r *Repository) HardDeleteHit(ctx context.Context, deletedAt time.Time) err
 		Time:  deletedAt,
 		Valid: true,
 	})
+}
+
+func (r *Repository) GetRunningCrossArbs(ctx context.Context) ([]postgres.Arb, error) {
+	return r.dbQuery.GetRunninngArbs(ctx, string(CrossArbType))
 }

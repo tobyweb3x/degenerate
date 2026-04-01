@@ -19,10 +19,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(true)
         .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
         .field_attribute(
-            "similarityhit.QdrantPayload.market_subcategory",
+            "opon_ifa.QdrantPayload.market_subcategory",
             "#[serde(default)]",
         )
-        .field_attribute("similarityhit.QdrantPayload.end_date", "#[serde(default)]")
+        .field_attribute("opon_ifa.QdrantPayload.end_date", "#[serde(default)]")
         .compile_protos(&all_proto_files, &[proto_root.into()])?;
 
     Ok(())

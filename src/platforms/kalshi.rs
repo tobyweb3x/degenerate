@@ -72,11 +72,11 @@ impl MyKalshiClient {
             .subscribe(vec!["market_lifecycle_v2"], vec![])
             .await?;
 
-        let duration = Duration::from_mins(20);
-        let mut twenty_mins_ticker = tokio::time::interval(duration);
+        let duration = Duration::from_secs(60 * 60 + 10 * 60);
+        let mut one_hour_ten_min_ticker = tokio::time::interval(duration);
         let mut ws_is_alive = true;
 
-        twenty_mins_ticker.tick().await; // fires first tick
+        one_hour_ten_min_ticker.tick().await; // fires first ticks
         loop {
             tokio::select! {
                   _ = shutdown.cancelled() => {
@@ -85,8 +85,8 @@ impl MyKalshiClient {
                         break;
                   }
 
-                _ = twenty_mins_ticker.tick() => {
-                    println!("kalshi six min triggers");
+                _ = one_hour_ten_min_ticker.tick() => {
+                    println!("kalshi one_hour_ten_min_ticker triggers");
                         let _ = self.backfill_kalshi_sport_history(duration, CancellationToken::new()).await
                         .inspect_err(|e|  tracing::error!("error handling kalshi msg(backfill): {e:?}"));
                      }
@@ -220,6 +220,68 @@ impl MyKalshiClient {
         None
     }
 
+    pub async fn backfill_kalshi_politics_history(
+        &self,
+        duration: Duration,
+        shutdown: CancellationToken,
+    ) -> Result<()> {
+        let mut join_set = tokio::task::JoinSet::new();
+
+        for category in models::MarketTag::Politics.identifiers(protos::Platform::Kalshi) {
+            let this = self.clone();
+            let shutdown = shutdown.clone();
+
+            join_set.spawn(async move {
+                let result = this
+                    .http_client
+                    .get_all_series(SeriesQuery {
+                        category: Some(category.to_string()),
+                        include_product_metadata: Some(true),
+                        include_volume: Some(true),
+                        ..Default::default()
+                    })
+                    .await?;
+
+                let tickers = result.series.into_iter().map(|s| s.ticker).collect();
+
+                this.backfill_kalshi_for_market_tag(
+                    duration,
+                    models::MarketTag::Politics,
+                    tickers,
+                    shutdown,
+                )
+                .await
+            });
+        }
+
+        let mut error_count = 0;
+        while let Some(res) = join_set.join_next().await {
+            match res {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    let in_hrs = duration.as_secs() / (60 * 60);
+                    tracing::error!(
+                        "kalshi backfill(Politics) failed for duration({in_hrs}hrs): {e:?}"
+                    );
+                    error_count += 1;
+                }
+                Err(join_err) => {
+                    tracing::error!("kalshi backfill(Politics) task panicked: {join_err:?}");
+                    error_count += 1;
+                }
+            }
+        }
+
+        if error_count > 0 {
+            return Err(anyhow::anyhow!(
+                "Kalshi backfill(Politics) completed with errors. See logs.",
+            ));
+        }
+
+        tracing::info!("kalshi backfill(Politics) completed successfully");
+        Ok(())
+    }
+
     pub async fn backfill_kalshi_sport_history(
         &self,
         duration: Duration,
@@ -229,8 +291,6 @@ impl MyKalshiClient {
             .http_client
             .get_all_series(SeriesQuery {
                 category: Some("Sports".to_string()),
-                include_product_metadata: Some(true),
-                include_volume: Some(true),
                 ..Default::default()
             })
             .await?;
@@ -238,29 +298,26 @@ impl MyKalshiClient {
         let mut soccer = Vec::with_capacity(result.series.len() / 3);
         let mut football = Vec::with_capacity(result.series.len() / 3);
         let mut basketball = Vec::with_capacity(result.series.len() / 3);
+        {
+            for market in result.series {
+                let Some(tags) = &market.tags else { continue };
 
-        for market in result.series {
-            let Some(tags) = &market.tags else { continue };
-
-            if market.category.trim() != "Sports" {
-                continue;
-            }
-
-            for tag in tags {
-                match tag.as_str().trim() {
-                    "Soccer" => {
-                        soccer.push(market.ticker.clone());
-                        break;
+                for tag in tags {
+                    match tag.as_str().trim() {
+                        "Soccer" => {
+                            soccer.push(market.ticker);
+                            break;
+                        }
+                        "Football" => {
+                            football.push(market.ticker);
+                            break;
+                        }
+                        "Basketball" => {
+                            basketball.push(market.ticker);
+                            break;
+                        }
+                        _ => {}
                     }
-                    "Football" => {
-                        football.push(market.ticker.clone());
-                        break;
-                    }
-                    "Basketball" => {
-                        basketball.push(market.ticker.clone());
-                        break;
-                    }
-                    _ => {}
                 }
             }
         }
@@ -275,7 +332,7 @@ impl MyKalshiClient {
             let this = self.clone();
             let shutdown = shutdown.clone();
             join_set.spawn(async move {
-                this.backfill_kalshi_sport_for_market_tag(duration, tag, markets, shutdown)
+                this.backfill_kalshi_for_market_tag(duration, tag, markets, shutdown)
                     .await
             });
         }
@@ -287,12 +344,12 @@ impl MyKalshiClient {
                 Ok(Err(e)) => {
                     let in_hrs = duration.as_secs() / (60 * 60);
                     tracing::error!(
-                        "kalshi sport backfill failed for duration({in_hrs}hrs) : {e:?}"
+                        "kalshi sport backfill(Sports) failed for duration({in_hrs}hrs) : {e:?}"
                     );
                     error_count += 1;
                 }
                 Err(join_err) => {
-                    tracing::error!("kalshi sport backfill task panicked: {join_err:?}");
+                    tracing::error!("kalshi sport backfill(Sports) task panicked: {join_err:?}");
                     error_count += 1;
                 }
             }
@@ -300,15 +357,15 @@ impl MyKalshiClient {
 
         if error_count > 0 {
             return Err(anyhow::anyhow!(
-                "Kalshi sport backfill completed, but with errors. See logs.",
+                "Kalshi sport backfill(Sports) completed, but with errors. See logs.",
             ));
         }
 
-        tracing::info!("kalshi sport backfill completed successfully");
+        tracing::info!("kalshi sport backfill(Sports) completed successfully");
         Ok(())
     }
 
-    async fn backfill_kalshi_sport_for_market_tag(
+    async fn backfill_kalshi_for_market_tag(
         &self,
         duration: Duration,
         market: models::MarketTag,
@@ -406,9 +463,13 @@ impl MyKalshiClient {
             format_duration_ago(duration)
         );
 
-        self.backfill_kalshi_sport_history(duration, shutdown)
+        self.backfill_kalshi_sport_history(duration, shutdown.clone())
             .await
             .context("kalshi sport backfill errored")?;
+
+        self.backfill_kalshi_politics_history(duration, shutdown)
+            .await
+            .context("kalshi politics backfill errored")?;
 
         // others in the future
         tracing::info!("kalshi backfill completed");

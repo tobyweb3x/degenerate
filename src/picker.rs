@@ -1,9 +1,11 @@
 pub mod comms {
     use crate::{
-        models::{self, make_market_key, protos},
+        models::{self, CorrelationId, make_market_key, protos},
         platforms,
     };
+    use alloy::network::any;
     use anyhow::{self, Context};
+    use chrono::{DateTime, Duration, Utc};
     use kalshi_rs::websocket::models::KalshiSocketMessage;
     use polymarket_hft::client::polymarket::clob;
     use std::collections::HashSet;
@@ -116,12 +118,30 @@ pub mod comms {
                                 self.resolve_discovered_list(list).await
                             },
 
+                            protos::server_ebo::Action::RunningArbsResponse(arbs) => {
+                                tracing::info!("got {} running arbs from server", arbs.confirmed_and_run.len());
+                                for (arb, correlation_id) in arbs.confirmed_and_run.into_iter().zip(arbs.correlation_ids) {
+                                    if let Err(e) = self.find_arb(arb, correlation_id).await {
+                                        tracing::error!("error from find_arb(confirmed_and_run_response): {e:#?}")
+                                    }
+                                }
+                            },
+
                             protos::server_ebo::Action::ConfirmedAndRun(arb ) => {
-                                println!("got a ConfirmedAndRun");
+                                tracing::info!("got a ConfirmedAndRun");
                                 if let Err(e) = self.find_arb(arb, correlation_id).await {
                                     tracing::error!("error from find_arb: {e:#?}")
                                 }
                             },
+
+                            protos::server_ebo::Action::DeleteRunningArbs(arb) => {
+                                for correlation_id in arb.correlation_ids {
+                                    if let Err(e) = self.delete_arb(correlation_id.clone()).await {
+                                        tracing::error!("{e:#?} for correlation_id:{correlation_id}")
+                                    }
+                                }
+                            }
+
                         }
 
                     }
@@ -138,33 +158,49 @@ pub mod comms {
             arb: protos::Arb,
             correlation_id: String,
         ) -> anyhow::Result<()> {
-            let (anchor_platform, anchor_token_id) = (
-                arb.anchor
+            let (anchor_platform, anchor_close_time, anchor_token_id) = {
+                let a = arb.anchor.as_ref().context("anchor missing")?;
+                let d = a.discovery.as_ref().context("anchor discovery missing")?;
+                let m = d
+                    .market_info
                     .as_ref()
-                    .and_then(|a| a.discovery.as_ref())
-                    .and_then(|d| d.market_info.as_ref())
-                    .and_then(|m| protos::Platform::try_from(m.platform).ok())
-                    .context("anchor missing")?,
-                arb.anchor
-                    .as_ref()
-                    .context("anchor missing")?
-                    .token_id
-                    .clone(),
-            );
+                    .context("anchor market_info missing")?;
 
-            let (match_platform, match_token_id) = (
-                arb.r#match
+                (
+                    protos::Platform::try_from(m.platform).context("anchor platform missing")?,
+                    DateTime::from_timestamp_millis(m.close_time_ms)
+                        .context("anchor close_time_ms missing")?,
+                    a.token_id.clone(),
+                )
+            };
+
+            let (match_platform, match_close_time, match_token_id) = {
+                let m_arb = arb.r#match.as_ref().context("match missing")?;
+                let d = m_arb
+                    .discovery
                     .as_ref()
-                    .and_then(|a| a.discovery.as_ref())
-                    .and_then(|d| d.market_info.as_ref())
-                    .and_then(|m| protos::Platform::try_from(m.platform).ok())
-                    .context("match missing")?,
-                arb.r#match
+                    .context("match discovery missing")?;
+                let m = d
+                    .market_info
                     .as_ref()
-                    .context("match missing")?
-                    .token_id
-                    .clone(),
-            );
+                    .context("match market_info missing")?;
+
+                (
+                    protos::Platform::try_from(m.platform).context("match platform missing")?,
+                    DateTime::from_timestamp_millis(m.close_time_ms)
+                        .context("match close_time_ms missing")?,
+                    m_arb.token_id.clone(),
+                )
+            };
+
+            let now = Utc::now();
+            let threshold = now + Duration::hours(1);
+            if (anchor_close_time > now && anchor_close_time <= threshold)
+                || (match_close_time > now && match_close_time <= threshold)
+            {
+                tracing::warn!("arb dropped, close_time within 1hr: {}", correlation_id);
+                return self.delete_arb(correlation_id).await;
+            }
 
             let entries = [
                 (anchor_platform, anchor_token_id),
@@ -178,11 +214,12 @@ pub mod comms {
                         self.platforms
                             .polymarket()
                             .ws_client()
-                            .subscribe_market(vec![token_id], true)
+                            .subscribe_market(vec![token_id.clone()], true)
                             .await
                             .context(
                                 "error subscribing polymarket token_id to ws market channel",
                             )?;
+                        tracing::info!("succesfully subscribe for {} on Polymarket", token_id,)
                     }
 
                     protos::Platform::Kalshi => {
@@ -192,6 +229,7 @@ pub mod comms {
                             .subscribe(vec!["ticker"], vec![token_id.as_str()])
                             .await
                             .context("error subscribing kalshi ticker to ws market channel")?;
+                        tracing::info!("succesfully subscribe for {} on kalshi", token_id,)
                     }
                 }
             }
@@ -334,17 +372,36 @@ pub mod comms {
 
             anyhow::Ok((market.into(), get_leg_token_id(leg)?))
         }
+
+        async fn delete_arb(&mut self, correlation_id: String) -> anyhow::Result<()> {
+            self.unregister_arb(&correlation_id);
+
+            let ebo = protos::ClientEbo {
+                action: Some(protos::client_ebo::Action::DeleteRunningArbs(
+                    protos::DeleteRunningArbRequest {
+                        correlation_ids: vec![correlation_id],
+                    },
+                )),
+                ..Default::default()
+            };
+
+            self.tx
+                .send(ebo)
+                .await
+                .context("error sending DeleteRunningArbs")
+        }
     }
 
     impl PickerComms {
         fn handle_poly_messages(&mut self, msg: clob::ws::WsMessage) -> anyhow::Result<()> {
             match msg {
                 clob::ws::WsMessage::BestBidAsk(best) => {
+                    println!(
+                        "we're getting poly BestBidAsk update for:{}",
+                        best.asset_id.as_str()
+                    );
                     self.on_price_update(
-                        models::make_market_key(
-                            &best.asset_id.as_str(),
-                            protos::Platform::Polymarket,
-                        ),
+                        models::make_market_key(&best.asset_id, protos::Platform::Polymarket),
                         models::TopOfBook {
                             best_bid: models::parse_f32(&best.best_bid)?,
                             best_ask: models::parse_f32(&best.best_ask)?,
@@ -361,7 +418,7 @@ pub mod comms {
                 clob::ws::WsMessage::MarketResolved(resolve) => {
                     // TODO: try resolve wins from here if possible
 
-                    println!("we got a polymarket resolve: {resolve:#?}");
+                    println!("we got a polymarket MarketResolved: {resolve:#?}");
                     for asset_id in resolve.asset_ids {
                         let market_key = make_market_key(&asset_id, protos::Platform::Polymarket);
 
@@ -385,6 +442,10 @@ pub mod comms {
         fn handle_kalshi_messages(&mut self, msg: KalshiSocketMessage) -> anyhow::Result<()> {
             match msg {
                 KalshiSocketMessage::TickerUpdate(ticker) => {
+                    println!(
+                        "we're getting kalshi TickerUpdate update for:{}",
+                        ticker.msg.market_ticker.as_str()
+                    );
                     self.on_price_update(
                         models::make_market_key(
                             &ticker.msg.market_ticker,
@@ -405,7 +466,11 @@ pub mod comms {
 
                 KalshiSocketMessage::MarketLifecycleV2(event) => {
                     // TODO: try resolve wins from here if possible
-                    println!("we got a kalshi resolve: {event:#?}");
+
+                    // println!(
+                    //     "we got a kalshi MarketLifecycleV2, event_type: {}",
+                    //     &event.msg.event_type
+                    // );
 
                     let market_key =
                         make_market_key(&event.msg.market_ticker, protos::Platform::Kalshi);

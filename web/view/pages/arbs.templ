@@ -101,6 +101,7 @@ templ ArbsPartial(param []TemplateModel[protos.ClientEbo_CrossPlatformArb], plat
 										</span>
 									</p>
 									<p class="text-xs font-archivo">Scored: <span class=" text-sm font-archivoSemiBold">{ fmt.Sprintf("%.2f%%", arb.Payload.CrossPlatformArb.Scored   * 100) } </span></p>
+									<p class="text-xs font-archivo">anchor expiration: <span class=" text-sm font-archivoSemiBold">{ friendlyTimeFromString(anchor.MarketInfo.CloseTimeMs) }</span></p>
 									if arb.Confirmed {
 										<p class="text-xs font-archivo">Confirmed: ✅</p>
 									}
@@ -228,7 +229,7 @@ templ ResolveArbPage(param TemplateModel[protos.ClientEbo_CrossPlatformArb]) {
 
 templ ResolveArbPartial(param TemplateModel[protos.ClientEbo_CrossPlatformArb]) {
 	<div id="resolve" class="grid grid-cols-2 gap-3 h-full">
-		<section id="listings" class="h-fit flex flex-col">
+		<section id="listings" class="h-full flex flex-col min-h-0">
 			@backBtn()
 			<div class="flex w-full justify-between items-center">
 				<p class="mt-6 font-dmSans font-extralight text-sm">Resolve for: <span class="font-bold font-archivoSemiBold text-base">{ shortenID(param.CorrelationId) }</span></p>
@@ -247,7 +248,7 @@ templ ResolveArbPartial(param TemplateModel[protos.ClientEbo_CrossPlatformArb]) 
 			</div>
 			{{ anchor := param.Payload.CrossPlatformArb.Anchor.Discovery }}
 			{{ match := param.Payload.CrossPlatformArb.Match.Discovery }}
-			<div id="real-info" class="">
+			<div id="real-info" class="flex-1 min-h-0 overflow-y-auto">
 				<div class="mt-2">
 					<div class="flex w-full justify-between item">
 						<p class="font-archivoSemiBold font-extralight text-xl">Anchor:</p>

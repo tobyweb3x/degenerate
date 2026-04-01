@@ -36,35 +36,26 @@ SELECT *
 FROM arbs
 WHERE correlation_id = $1;
 
--- name: GetRecentCrossHits :many
+-- name: GetRecentHits :many
 SELECT *
 FROM similarity_hits
-WHERE arb_type = 'cross'
+WHERE arb_type = $1
   AND is_deleted = FALSE
 ORDER BY created_at DESC
-LIMIT $1;
+LIMIT $2;
 
--- name: GetRecentCrossArbs :many
+-- name: GetRecentArbs :many
 SELECT *
 FROM arbs
-WHERE arb_type = 'cross'
+WHERE arb_type = $1
 ORDER BY created_at DESC
-LIMIT $1;
+LIMIT $2;
 
--- name: GetRecentIntraHits :many
-SELECT *
-FROM similarity_hits
-WHERE arb_type = 'intra'
-    AND is_deleted = FALSE
-ORDER BY created_at DESC
-LIMIT $1;
-
--- name: GetRecentIntraArbs :many
+-- name: GetRunninngArbs :many
 SELECT *
 FROM arbs
-WHERE arb_type = 'intra'
-ORDER BY created_at DESC
-LIMIT $1;
+WHERE arb_type = $1 AND running = TRUE
+ORDER BY created_at DESC;
 
 -- name: DeleteSimilarityHit :exec
 UPDATE similarity_hits

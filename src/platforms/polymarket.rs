@@ -58,11 +58,11 @@ impl MyPolymarketClient {
 
         self.clob_ws_client.subscribe_market(vec![], true).await?;
 
-        let duration = Duration::from_mins(25);
-        let mut twenty_five_minute_ticker = tokio::time::interval(duration);
+        let duration = std::time::Duration::from_secs(60 * 60 + 30 * 60);
+        let mut one_hour_thirty_min_ticker = tokio::time::interval(duration);
         let mut ws_is_alive = true;
 
-        twenty_five_minute_ticker.tick().await; // fires first tick
+        one_hour_thirty_min_ticker.tick().await; // fires first tick
         loop {
             tokio::select! {
                 biased;
@@ -72,8 +72,8 @@ impl MyPolymarketClient {
                     break;
                 }
 
-                _ = twenty_five_minute_ticker.tick() => {
-                    println!("polymarket five min triggers");
+                _ = one_hour_thirty_min_ticker.tick() => {
+                    println!("polymarket one_hour_thirty_min_ticker triggers");
                     let _ = self.backfill_polymarket_sport_history(duration, CancellationToken::new()).await
                     .inspect_err(|e| tracing::error!("error handling polymarket msg(backfill): {e:?}"));
                 }
@@ -162,6 +162,20 @@ impl MyPolymarketClient {
         None
     }
 
+    async fn backfill_polymarket_politics_history(
+        &self,
+        duration_in_secs: Duration,
+        shutdown: CancellationToken,
+    ) -> anyhow::Result<()> {
+        let duration = duration_in_secs.as_secs();
+
+        self.backfill_polymakert_for_market_tag(duration, models::MarketTag::Politics, shutdown)
+            .await?;
+
+        tracing::info!("polymarket politics backfill completed successfully");
+        Ok(())
+    }
+
     async fn backfill_polymarket_sport_history(
         &self,
         duration_in_secs: Duration,
@@ -180,7 +194,7 @@ impl MyPolymarketClient {
             let cloned_shutdown = shutdown.clone();
             join_set.spawn(async move {
                 client
-                    .backfill_polymakert_sport_for_market_tag(duration, tag, cloned_shutdown)
+                    .backfill_polymakert_for_market_tag(duration, tag, cloned_shutdown)
                     .await
             });
         }
@@ -214,7 +228,7 @@ impl MyPolymarketClient {
         Ok(())
     }
 
-    async fn backfill_polymakert_sport_for_market_tag(
+    async fn backfill_polymakert_for_market_tag(
         &self,
         seconds_duration: u64,
         market: models::MarketTag,
@@ -318,12 +332,14 @@ impl MyPolymarketClient {
             format_duration_ago(duration)
         );
 
-        // sports
         self.backfill_polymarket_sport_history(duration, shutdown.clone())
             .await
             .context("polymarket sport backfill errored")?;
 
-        // others in the future
+        self.backfill_polymarket_politics_history(duration, shutdown)
+            .await
+            .context("polymarket politics backfill errored")?;
+
         tracing::info!("polymarket backfill completed");
         Ok(())
     }
