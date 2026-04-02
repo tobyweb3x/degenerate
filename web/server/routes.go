@@ -25,7 +25,7 @@ func (a *App) Routes() *chi.Mux {
 	r.Post("/resolve/hit/submit/{correlationId}", a.resolveHitSubmit)
 	r.Post("/resolve/arb/submit/confirm/{correlationId}", a.resolveArbConfirm)
 	r.Post("/resolve/arb/submit/confirm&run/{correlationId}", a.resolveArbConfirmAndRun)
-	
+
 	r.Get("/resolve/hit/{correlationId}", a.resolveHitPage)
 	r.Get("/resolve/arb/{correlationId}", a.resolveArbPage)
 
@@ -33,7 +33,9 @@ func (a *App) Routes() *chi.Mux {
 	r.Get("/arbs", a.arbsPage)
 
 	r.Post("/delete/hit/{correlationId}", a.softDeleteHit)
+	r.Post("/delete/hits", a.bulkSoftDeleteHits)
 	r.Post("/delete/arb/{correlationId}", a.deleteArb)
+	r.Post("/delete/arbs", a.bulkDeleteArbs)
 
 	r.Get("/market/json/{platform}/{ticker}", a.getMarket)
 	r.Get("/book/json/{platform}/{tokenId}", a.getBook)

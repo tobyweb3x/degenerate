@@ -1,11 +1,9 @@
 use anyhow::Result;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
-use tracing_subscriber;
 use tracing_subscriber::{EnvFilter, fmt};
 
 mod app;
-mod execution;
 mod grpc;
 mod models;
 mod picker;
@@ -50,7 +48,8 @@ async fn main() -> Result<()> {
                 flatten(app_runtime.kalshi_handle),
                 flatten(app_runtime.grpc_handle),
                 flatten(app_runtime.picker_comms_handle),
-                flatten(app_runtime.picker_exec_handle)
+                flatten(app_runtime.picker_exec_handle),
+                flatten(app_runtime.vector_store_cleanup)
             )
         } => {
             match res {

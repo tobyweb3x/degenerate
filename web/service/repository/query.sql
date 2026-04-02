@@ -67,6 +67,16 @@ WHERE correlation_id = $1;
 DELETE FROM arbs
 WHERE correlation_id = $1;
 
+-- name: DeleteSimilarityHitsBulk :exec
+UPDATE similarity_hits
+SET is_deleted = TRUE,
+    deleted_at = NOW()
+WHERE correlation_id = ANY(sqlc.arg(correlation_ids)::text[]);
+
+-- name: DeleteArbsBulk :exec
+DELETE FROM arbs
+WHERE correlation_id = ANY(sqlc.arg(correlation_ids)::text[]);
+
 -- name: UpdateArbConfirm :exec
 UPDATE arbs
 SET confirmed = $2

@@ -161,3 +161,11 @@ func (r *Repository) HardDeleteHit(ctx context.Context, deletedAt time.Time) err
 func (r *Repository) GetRunningCrossArbs(ctx context.Context) ([]postgres.Arb, error) {
 	return r.dbQuery.GetRunninngArbs(ctx, string(CrossArbType))
 }
+
+func (r *Repository) SoftDeleteSimilarityHitsBulk(ctx context.Context, correlationIDs []string) error {
+	return r.dbQuery.DeleteSimilarityHitsBulk(ctx, correlationIDs)
+}
+
+func (r *Repository) DeleteArbsBulk(ctx context.Context, correlationIDs []string) error {
+	return r.dbQuery.DeleteArbsBulk(ctx, correlationIDs)
+}

@@ -28,6 +28,16 @@ func (q *Queries) DeleteArb(ctx context.Context, correlationID string) error {
 	return err
 }
 
+const deleteArbsBulk = `-- name: DeleteArbsBulk :exec
+DELETE FROM arbs
+WHERE correlation_id = ANY($1::text[])
+`
+
+func (q *Queries) DeleteArbsBulk(ctx context.Context, correlationIds []string) error {
+	_, err := q.db.Exec(ctx, deleteArbsBulk, correlationIds)
+	return err
+}
+
 const deleteSimilarityHit = `-- name: DeleteSimilarityHit :exec
 UPDATE similarity_hits
 SET is_deleted = TRUE,
@@ -37,6 +47,18 @@ WHERE correlation_id = $1
 
 func (q *Queries) DeleteSimilarityHit(ctx context.Context, correlationID string) error {
 	_, err := q.db.Exec(ctx, deleteSimilarityHit, correlationID)
+	return err
+}
+
+const deleteSimilarityHitsBulk = `-- name: DeleteSimilarityHitsBulk :exec
+UPDATE similarity_hits
+SET is_deleted = TRUE,
+    deleted_at = NOW()
+WHERE correlation_id = ANY($1::text[])
+`
+
+func (q *Queries) DeleteSimilarityHitsBulk(ctx context.Context, correlationIds []string) error {
+	_, err := q.db.Exec(ctx, deleteSimilarityHitsBulk, correlationIds)
 	return err
 }
 

@@ -15,7 +15,6 @@ pub mod protos {
     tonic::include_proto!("opon_ifa");
 }
 
-#[allow(dead_code)]
 pub mod constants {
     pub const PLATFORM_POLYMARKET: &str = "POLYMARKET";
     pub const PLATFORM_KALSHI: &str = "KALSHI";
@@ -173,10 +172,10 @@ fn parse_ts_to_millis(s: &str) -> i64 {
     }
 
     // Fallback: YYYY-MM-DD
-    if let Ok(date) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        if let Some(dt) = date.and_hms_opt(0, 0, 0) {
-            return dt.and_utc().timestamp_millis();
-        }
+    if let Ok(date) = NaiveDate::parse_from_str(s, "%Y-%m-%d")
+        && let Some(dt) = date.and_hms_opt(0, 0, 0)
+    {
+        return dt.and_utc().timestamp_millis();
     }
 
     // If everything fails
@@ -198,7 +197,7 @@ impl From<gamma::Market> for protos::MarketInfo {
             )),
             question: {
                 let q = value.question.unwrap_or_default();
-                if q.ends_with(|c| c == '?' || c == '.') {
+                if q.ends_with(['?', '.']) {
                     q
                 } else {
                     format!("{q}.")
@@ -392,8 +391,8 @@ impl QdrantMarketConverter<kalshi_rs::markets::models::Market> for protos::Qdran
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter)]
 pub enum MarketTag {
     Soccer,
-    NBA,
-    NFL,
+    Nba,
+    Nfl,
     Politics,
 }
 
@@ -406,20 +405,20 @@ pub struct MarketTagInfo {
 impl MarketTag {
     pub fn identifiers(&self, platform: protos::Platform) -> &'static [&'static str] {
         match (self, platform) {
-            (Self::NBA, protos::Platform::Polymarket) => &[
+            (Self::Nba, protos::Platform::Polymarket) => &[
                 "745", "100240", "100871", "102037", "101506", "102288", "100108", "100254",
                 "101849", "100283", "102769",
             ],
-            (Self::NBA, protos::Platform::Kalshi) => &["Basketball"],
+            (Self::Nba, protos::Platform::Kalshi) => &["Basketball"],
 
             (Self::Soccer, protos::Platform::Polymarket) => &["306", "100350", "100834", "100300"],
             (Self::Soccer, protos::Platform::Kalshi) => &["Soccer"],
 
-            (Self::NFL, protos::Platform::Polymarket) => &[
+            (Self::Nfl, protos::Platform::Polymarket) => &[
                 "450", "101674", "100959", "1453", "100833", "102575", "102590", "636", "102160",
                 "101594", "1186", "102934", "10", "101673",
             ],
-            (Self::NFL, protos::Platform::Kalshi) => &["Football"],
+            (Self::Nfl, protos::Platform::Kalshi) => &["Football"],
 
             (Self::Politics, protos::Platform::Polymarket) => &[
                 "2", "596", "176", "789", "902", "100199", "144", "101206", "102788", "1597",
@@ -440,11 +439,11 @@ impl MarketTag {
                 market_category: "sport",
                 market_subcategory: "Socer",
             },
-            Self::NBA => MarketTagInfo {
+            Self::Nba => MarketTagInfo {
                 market_category: "sport",
                 market_subcategory: "NBA",
             },
-            Self::NFL => MarketTagInfo {
+            Self::Nfl => MarketTagInfo {
                 market_category: "sport",
                 market_subcategory: "NFL",
             },

@@ -8,219 +8,136 @@ import (
 	"web/protos"
 )
 
-templ ArbsPage(param []TemplateModel[protos.ClientEbo_CrossPlatformArb], platformCount PlatformAchorCount, statusCount ArbStatusCount) {
-	@document(ArbsPartial(param, platformCount, statusCount), nil)
+templ ArbsPage(param []TemplateModel[protos.ClientEbo_CrossPlatformArb]) {
+	@document(ArbsPartial(param), nil)
 }
 
-templ ArbsPartial(param []TemplateModel[protos.ClientEbo_CrossPlatformArb], platformCount PlatformAchorCount, statusCount ArbStatusCount) {
+templ ArbsPartial(param []TemplateModel[protos.ClientEbo_CrossPlatformArb]) {
 	<div class="mx-3 h-full flex flex-col" id="needsResolve">
 		<div class="flex gap-3 py-4 justify-center items-center w-fit">
 			<p class="text-2xl font-archivoSemiBold text-left">Arbs</p>
-			<p class="text-sm font-archivo rounded-full bg-[#FFFFFF4D] px-1.5 py-0.5 text-center w-fit h-fit">
+			<!-- Updated to have an ID so JS can update the total count -->
+			<p id="total-visible-count" class="text-sm font-archivo rounded-full bg-[#FFFFFF4D] px-1.5 py-0.5 text-center w-fit h-fit">
 				{{ p := message.NewPrinter(language.English) }}
 				{ p.Sprintf("%d", len(param)) }
 			</p>
 		</div>
 		if len(param) > 0 {
-			<div class="flex gap-2 mb-3">
-				<button
-					onclick="filterPlatform('ALL', this)"
-					class="platform-filter px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition
-				    bg-emerald-500/20 ring-1 ring-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.6)]"
-				>
-					All
-				</button>
-				<button
-					onclick="filterPlatform('POLYMARKET', this)"
-					class="platform-filter flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition"
-				>
-					<span>Polymarket</span>
-					<span class="text-xs font-dmSans rounded-full bg-black px-1.5 py-0.5">
-						{ p.Sprintf("%d", platformCount.PolymarketCount) }
-					</span>
-				</button>
-				<button
-					onclick="filterPlatform('KALSHI', this)"
-					class="platform-filter flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition"
-				>
-					<span>Kalshi</span>
-					<span class="text-xs font-dmSans rounded-full bg-black px-1.5 py-0.5">
-						{ p.Sprintf("%d", platformCount.KalshiCount) }
-					</span>
-				</button>
-				<button
-					onclick="filterStatus('CONFIRMED', this)"
-					class="platform-filter flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition"
-				>
-					<span>Confirmed</span>
-					<span class="text-xs font-dmSans rounded-full bg-black px-1.5 py-0.5">
-						{ p.Sprintf("%d", statusCount.Confirmed) }
-					</span>
-				</button>
-				<button
-					onclick="filterStatus('RUNNING', this)"
-					class="platform-filter flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition"
-				>
-					<span>Running</span>
-					<span class="text-xs font-dmSans rounded-full bg-black px-1.5 py-0.5">
-						{ p.Sprintf("%d", statusCount.Running) }
-					</span>
-				</button>
-			</div>
-			<section class="ml-2.5 overflow-y-auto min-h-0">
-				<ul class="space-y-3">
-					for i, arb := range param {
-						if arb.Payload.CrossPlatformArb == nil {
-							continue
+			<!-- WRAP EVERYTHING IN A FORM FOR BATCH DELETE -->
+			<form id="bulk-delete-arbs-form" hx-post="/delete/arbs" hx-target="#needsResolve" hx-swap="outerHTML" class="flex flex-col h-full min-h-0">
+				<!-- THE HEADER CONTROLS -->
+				<div class="flex justify-between items-start mb-3 shrink-0">
+					<!-- FILTERS -->
+					<div class="flex flex-wrap gap-2 pr-4">
+						<button type="button" onclick="applyFilters('platform', 'ALL', this)" class="filter-btn platform-btn active-filter px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition bg-emerald-500/20 ring-1 ring-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.6)]">
+							All
+						</button>
+						<button type="button" onclick="applyFilters('platform', 'POLYMARKET', this)" class="filter-btn platform-btn flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition">
+							<span>Polymarket</span>
+							<span class="poly-count text-xs font-dmSans rounded-full bg-black px-1.5 py-0.5">0</span>
+						</button>
+						<button type="button" onclick="applyFilters('platform', 'KALSHI', this)" class="filter-btn platform-btn flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition">
+							<span>Kalshi</span>
+							<span class="kalshi-count text-xs font-dmSans rounded-full bg-black px-1.5 py-0.5">0</span>
+						</button>
+						<!-- Status Filters -->
+						<div class="h-6 w-px bg-white/20 mx-1"></div> <!-- Divider -->
+						<button type="button" onclick="applyFilters('status', 'ALL', this)" class="filter-btn status-btn active-filter px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition bg-emerald-500/20 ring-1 ring-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.6)]">
+							All Status
+						</button>
+						<button type="button" onclick="applyFilters('status', 'CONFIRMED', this)" class="filter-btn status-btn flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition">
+							<span>Confirmed</span>
+							<span class="confirmed-count text-xs font-dmSans rounded-full bg-black px-1.5 py-0.5">0</span>
+						</button>
+						<button type="button" onclick="applyFilters('status', 'RUNNING', this)" class="filter-btn status-btn flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs cursor-pointer transition">
+							<span>Running</span>
+							<span class="running-count text-xs font-dmSans rounded-full bg-black px-1.5 py-0.5">0</span>
+						</button>
+					</div>
+					<!-- MULTI DELETE CONTROLS -->
+					<div class="flex gap-2 items-center shrink-0">
+						<button type="button" id="start-multi-btn" onclick="toggleMultiDelete(true)" class="w-fit cursor-pointer bg-purple-800 hover:bg-purple-500 font-dmSans py-2 px-3 rounded-xl text-xs transition-colors">
+							Delete Multiples
+						</button>
+						<button type="button" id="cancel-multi-btn" onclick="toggleMultiDelete(false)" class="hidden w-fit cursor-pointer bg-gray-600 hover:bg-gray-500 font-dmSans py-2 px-3 rounded-xl text-xs transition-colors">
+							Cancel
+						</button>
+						<button type="submit" id="confirm-multi-btn" hx-confirm="Delete selected arbs?" class="hidden w-fit bg-red-600 hover:bg-red-500 font-dmSans py-2 px-3 rounded-xl text-xs transition-colors opacity-50 cursor-not-allowed" disabled>
+							Delete Selected (0)
+						</button>
+					</div>
+				</div>
+				<!-- THE LIST -->
+				<section class="ml-2.5 overflow-y-auto flex-1 min-h-0 pb-4">
+					<ul class="space-y-3">
+						for i, arb := range param {
+							if arb.Payload.CrossPlatformArb == nil {
+								continue
+							}
+							{{ anchor := arb.Payload.CrossPlatformArb.Anchor.Discovery }}
+							{{ match := arb.Payload.CrossPlatformArb.Match.Discovery }}
+							<li
+								class="relative border-4 border-white/30 rounded-2xl px-2.5 py-2.5 text-md transition-colors duration-150 hover:bg-white/5 cursor-pointer listings"
+								data-platform={ anchor.MarketInfo.Platform.String() }
+								data-confirmed={ fmt.Sprintf("%t", arb.Confirmed) }
+								data-running={ fmt.Sprintf("%t", arb.Running) }
+							>
+								<!-- CHECKBOX (Hidden by default) -->
+								<div class="absolute top-4 right-16 z-10 hidden multi-select-wrapper pointer-events-none">
+									<input type="checkbox" name="ids" value={ arb.CorrelationId } class="multi-select w-5 h-5 rounded-md accent-red-500 cursor-pointer"/>
+								</div>
+								<a class="nav-link block" hx-get={ templ.SafeURL(fmt.Sprintf("/resolve/arb/%s", arb.CorrelationId)) } hx-trigger="click" hx-target="#needsResolve" hx-swap="outerHTML" hx-push-url="true">
+									<div class="flex justify-between w-full">
+										<p><span class="font-archivo text-sm">Question:</span> { anchor.MarketInfo.Question }</p>
+										<p class="font-extrabold text-xs numbering">{ fmt.Sprintf("%d", i+1) }</p>
+									</div>
+									<div>
+										<p><span class="font-archivo text-sm">Picks (<span class="text-xs">{ fmt.Sprintf("anchor--> %d ", anchor.Leg) }</span>): </span> <span class="font-archivoSemiBold">{ anchor.LegStr }</span></p>
+										<p><span class="font-archivo text-sm">Picks (<span class="text-xs">{ fmt.Sprintf("match--> %d ", match.Leg) }</span>): </span> <span class="font-archivoSemiBold">{ match.LegStr }</span></p>
+									</div>
+									<p class="font-archivo text-sm">Category: <span class=" text-sm font-archivoSemiBold">{ cases.Title(language.English).String(anchor.MarketInfo.MarketCategory) }</span></p>
+									<div class="flex gap-8 mt-2.5 items-center">
+										<p class="text-xs font-archivo">foundAt: <span class=" text-sm font-archivoSemiBold">{ friendlyTime(arb.ArbFoundAt) } </span></p>
+										<p class="text-xs font-archivo">
+											platforms: 
+											<span class="text-sm font-archivoSemiBold">
+												{ fmt.Sprintf("%s/%s", cases.Title(language.English).String(anchor.MarketInfo.Platform.String()),  cases.Title(language.English).String(match.MarketInfo.Platform.String()) ) }
+											</span>
+										</p>
+										<p class="text-xs font-archivo">Scored: <span class=" text-sm font-archivoSemiBold">{ fmt.Sprintf("%.2f%%", arb.Payload.CrossPlatformArb.Scored   * 100) } </span></p>
+										<p class="text-xs font-archivo">anchor expiration: <span class=" text-sm font-archivoSemiBold">{ friendlyTimeFromString(anchor.MarketInfo.CloseTimeMs) }</span></p>
+										if arb.Confirmed {
+											<p class="text-xs font-archivo">Confirmed: ✅</p>
+										}
+										if arb.Running {
+											<p class="text-xs font-archivo">Running: ✅</p>
+										}
+										<!-- SINGLE DELETE BUTTON -->
+										<button
+											type="button"
+											hx-post={ templ.SafeURL(fmt.Sprintf("/delete/arb/%s", arb.CorrelationId)) }
+											hx-target="#needsResolve"
+											hx-swap="outerHTML"
+											hx-confirm="Are you sure you want to delete this arb?"
+											hx-trigger="click consume"
+											hx-on:click="event.stopPropagation()"
+											hx-push-url="false"
+											class="single-delete-btn ml-auto transition-all duration-150 hover:bg-red-500/20 hover:ring-1 hover:ring-red-400 rounded-full cursor-pointer relative z-20"
+										>
+											<img src="/assets/svg/delete-red.svg" alt="" class="w-6 aspect-square"/>
+										</button>
+									</div>
+								</a>
+							</li>
 						}
-						{{ anchor := arb.Payload.CrossPlatformArb.Anchor.Discovery }}
-						{{ match := arb.Payload.CrossPlatformArb.Match.Discovery }}
-						<li
-							class="border-4 border-white/30 rounded-2xl px-2.5 py-2.5 text-md transition-colors duration-150 hover:bg-white/5 cursor-pointer listings"
-							data-platform={ anchor.MarketInfo.Platform.String() }
-							data-confirmed={ arb.Confirmed }
-							data-running={ arb.Running }
-						>
-							<a hx-get={ templ.SafeURL(fmt.Sprintf("/resolve/arb/%s", arb.CorrelationId)) } hx-trigger="click" hx-target="#needsResolve" hx-swap="outerHTML" hx-push-url="true">
-								<div class="flex justify-between w-full">
-									<p><span class="font-archivo text-sm">Question:</span> { anchor.MarketInfo.Question }</p>
-									<p class="font-extrabold text-xs">{ i+1 }</p>
-								</div>
-								<div>
-									<p><span class="font-archivo text-sm">Picks (<span class="text-xs">{ fmt.Sprintf("anchor--> %d ", anchor.Leg) }</span>): </span> <span class="font-archivoSemiBold">{ anchor.LegStr }</span></p>
-									<p><span class="font-archivo text-sm">Picks (<span class="text-xs">{ fmt.Sprintf("match--> %d ", match.Leg) }</span>): </span> <span class="font-archivoSemiBold">{ match.LegStr }</span></p>
-								</div>
-								<p class="font-archivo text-sm">Category: <span class=" text-sm font-archivoSemiBold">{ cases.Title(language.English).String(anchor.MarketInfo.MarketCategory) }</span></p>
-								<div class="flex gap-8 mt-2.5 items-center">
-									<p class="text-xs font-archivo">foundAt: <span class=" text-sm font-archivoSemiBold">{ friendlyTime(arb.ArbFoundAt) } </span></p>
-									<p class="text-xs font-archivo">
-										platforms: 
-										<span class="text-sm font-archivoSemiBold">
-											{ fmt.Sprintf("%s/%s", 
-                                    cases.Title(language.English).String(anchor.MarketInfo.Platform.String()),  cases.Title(language.English).String(match.MarketInfo.Platform.String()) ) }
-										</span>
-									</p>
-									<p class="text-xs font-archivo">Scored: <span class=" text-sm font-archivoSemiBold">{ fmt.Sprintf("%.2f%%", arb.Payload.CrossPlatformArb.Scored   * 100) } </span></p>
-									<p class="text-xs font-archivo">anchor expiration: <span class=" text-sm font-archivoSemiBold">{ friendlyTimeFromString(anchor.MarketInfo.CloseTimeMs) }</span></p>
-									if arb.Confirmed {
-										<p class="text-xs font-archivo">Confirmed: ✅</p>
-									}
-									if arb.Running {
-										<p class="text-xs font-archivo">Running: ✅</p>
-									}
-									<button
-										type="button"
-										hx-post={ templ.SafeURL(fmt.Sprintf("/delete/arb/%s", arb.CorrelationId)) }
-										hx-target="#needsResolve"
-										hx-swap="outerHTML"
-										hx-confirm="Are you sure you want to delete this arb?"
-										hx-trigger="click"
-										hx-on:click="event.stopPropagation()"
-										hx-push-url="false"
-										class="ml-auto transition-all duration-150 hover:bg-red-500/20 hover:ring-1 hover:ring-red-400 rounded-full cursor-pointer"
-									>
-										<img src="/assets/svg/delete-red.svg" alt="" class="w-6 aspect-square"/>
-									</button>
-								</div>
-							</a>
-						</li>
-					}
-				</ul>
-			</section>
+					</ul>
+				</section>
+			</form>
 		} else {
 			<p class="h-full w-full mx-auto my-auto text-2xl font-dmSans text-center items-center grid place-items-center">No arbs to see</p>
 		}
-		<style>
-			.loading {
-				filter: blur(2px);
-				pointer-events: none;
-			}
-		</style>
-		<script>
-		function filterPlatform(platform, btn) {
-
-			const container = document.querySelector("#needsResolve > section")
-			container.classList.add("loading")
-
-			setTimeout(() => {
-				document.querySelectorAll(".platform-filter").forEach(b => {
-					b.classList.remove(
-						"bg-emerald-500/20",
-						"ring-1",
-						"ring-emerald-400",
-						"shadow-[0_0_8px_rgba(16,185,129,0.6)]"
-					)
-				})
-
-				btn.classList.add(
-					"bg-emerald-500/20",
-					"ring-1",
-					"ring-emerald-400",
-					"shadow-[0_0_8px_rgba(16,185,129,0.6)]"
-				)
-
-				const items = document.querySelectorAll(".listings")
-				items.forEach(item => {
-					const p = item.dataset.platform
-
-					if (platform === "ALL" || p === platform) {
-						item.classList.remove("hidden")
-					} else {
-						item.classList.add("hidden")
-					}
-				})
-
-				container.classList.remove("loading")
-
-			}, 0)
-		}
-
-		function filterStatus(status, btn) {
-
-		const container = document.querySelector("#needsResolve > section")
-		container.classList.add("loading")
-
-		setTimeout(() => {
-
-			document.querySelectorAll(".platform-filter").forEach(b => {
-			b.classList.remove(
-				"bg-emerald-500/20",
-				"ring-1",
-				"ring-emerald-400",
-				"shadow-[0_0_8px_rgba(16,185,129,0.6)]"
-			)
-			})
-
-			btn.classList.add(
-			"bg-emerald-500/20",
-			"ring-1",
-			"ring-emerald-400",
-			"shadow-[0_0_8px_rgba(16,185,129,0.6)]"
-			)
-
-			const items = document.querySelectorAll(".listings")
-
-			items.forEach(item => {
-			const confirmed = item.dataset.confirmed === "true"
-			const running = item.dataset.running === "true"
-
-			if (
-				status === "ALL" ||
-				(status === "CONFIRMED" && confirmed) ||
-				(status === "RUNNING" && running)
-			) {
-				item.classList.remove("hidden")
-			} else {
-				item.classList.add("hidden")
-			}
-			})
-
-			container.classList.remove("loading")
-
-		}, 0)
-		}
-		</script>
 	</div>
+	@arbsFilterAndMultiDeleteScripts()
 }
 
 templ ResolveArbPage(param TemplateModel[protos.ClientEbo_CrossPlatformArb]) {
@@ -230,7 +147,7 @@ templ ResolveArbPage(param TemplateModel[protos.ClientEbo_CrossPlatformArb]) {
 templ ResolveArbPartial(param TemplateModel[protos.ClientEbo_CrossPlatformArb]) {
 	<div id="resolve" class="grid grid-cols-2 gap-3 h-full">
 		<section id="listings" class="h-full flex flex-col min-h-0">
-			@backBtn()
+			@backBtn("arbs")
 			<div class="flex w-full justify-between items-center">
 				<p class="mt-6 font-dmSans font-extralight text-sm">Resolve for: <span class="font-bold font-archivoSemiBold text-base">{ shortenID(param.CorrelationId) }</span></p>
 				<button
@@ -399,4 +316,204 @@ templ JsonDetails(content string) {
 	<pre class="bg-black/80 text-green-300 font-mono text-xs p-3 rounded-2xl h-full overflow-auto">
 		{ content }
 	</pre>
+}
+
+var arbsScriptHandle = templ.NewOnceHandle()
+
+templ arbsFilterAndMultiDeleteScripts() {
+	@arbsScriptHandle.Once() {
+		<style>
+			.loading {
+				filter: blur(2px);
+				pointer-events: none;
+			}
+		</style>
+		<script>
+			// --- FILTER LOGIC ---
+			let currentFilters = {
+				platform: "ALL",
+				status: "ALL",
+			};
+
+			document.addEventListener("DOMContentLoaded", updateCounts);
+			updateCounts();
+
+			function applyFilters(filterType, filterValue, btnEl) {
+				const container = document.querySelector(
+					"#needsResolve > form > section",
+				);
+				if (container) container.classList.add("loading");
+
+				currentFilters[filterType] = filterValue;
+
+				setTimeout(() => {
+					// Update active button styles for the specific group
+					const groupClass =
+						filterType === "platform" ? ".platform-btn" : ".status-btn";
+					document.querySelectorAll(groupClass).forEach((b) => {
+						b.classList.remove(
+							"bg-emerald-500/20",
+							"ring-1",
+							"ring-emerald-400",
+							"shadow-[0_0_8px_rgba(16,185,129,0.6)]",
+						);
+						b.classList.add("bg-white/20");
+					});
+
+					btnEl.classList.remove("bg-white/20");
+					btnEl.classList.add(
+						"bg-emerald-500/20",
+						"ring-1",
+						"ring-emerald-400",
+						"shadow-[0_0_8px_rgba(16,185,129,0.6)]",
+					);
+
+					let visibleCount = 0;
+					const items = document.querySelectorAll(".listings");
+
+					items.forEach((item) => {
+						const p = item.dataset.platform;
+						const isConfirmed = item.dataset.confirmed === "true";
+						const isRunning = item.dataset.running === "true";
+
+						const platformMatch =
+							currentFilters.platform === "ALL" ||
+							p === currentFilters.platform;
+
+						let statusMatch = true;
+						if (currentFilters.status === "CONFIRMED")
+							statusMatch = isConfirmed;
+						if (currentFilters.status === "RUNNING") statusMatch = isRunning;
+
+						if (platformMatch && statusMatch) {
+							item.classList.remove("hidden");
+							visibleCount++;
+						} else {
+							item.classList.add("hidden");
+						}
+					});
+
+					const totalEl = document.getElementById("total-visible-count");
+					if (totalEl) totalEl.innerText = visibleCount;
+
+					if (container) container.classList.remove("loading");
+				}, 10);
+			}
+
+			function updateCounts() {
+				const items = document.querySelectorAll(".listings");
+				let counts = { poly: 0, kalshi: 0, confirmed: 0, running: 0 };
+
+				items.forEach((item) => {
+					if (item.dataset.platform === "POLYMARKET") counts.poly++;
+					if (item.dataset.platform === "KALSHI") counts.kalshi++;
+					if (item.dataset.confirmed === "true") counts.confirmed++;
+					if (item.dataset.running === "true") counts.running++;
+				});
+
+				const elPoly = document.querySelector(".poly-count");
+				const elKalshi = document.querySelector(".kalshi-count");
+				const elConf = document.querySelector(".confirmed-count");
+				const elRun = document.querySelector(".running-count");
+
+				if (elPoly) elPoly.innerText = counts.poly;
+				if (elKalshi) elKalshi.innerText = counts.kalshi;
+				if (elConf) elConf.innerText = counts.confirmed;
+				if (elRun) elRun.innerText = counts.running;
+			}
+
+			// --- MULTI-DELETE LOGIC ---
+			let multiMode = false;
+
+			function toggleMultiDelete(enable) {
+				multiMode = enable;
+
+				const startBtn = document.getElementById("start-multi-btn");
+				const cancelBtn = document.getElementById("cancel-multi-btn");
+				const confirmBtn = document.getElementById("confirm-multi-btn");
+
+				const checkboxes = document.querySelectorAll(".multi-select-wrapper");
+				const rawInputs = document.querySelectorAll(".multi-select");
+				const numberings = document.querySelectorAll(".numbering");
+				const singleDeletes = document.querySelectorAll(".single-delete-btn");
+
+				if (multiMode) {
+					startBtn.classList.add("hidden");
+					cancelBtn.classList.remove("hidden");
+					confirmBtn.classList.remove("hidden");
+
+					checkboxes.forEach((cb) => cb.classList.remove("hidden"));
+					numberings.forEach((n) => n.classList.add("hidden"));
+					singleDeletes.forEach((btn) => btn.classList.add("hidden"));
+				} else {
+					startBtn.classList.remove("hidden");
+					cancelBtn.classList.add("hidden");
+					confirmBtn.classList.add("hidden");
+
+					checkboxes.forEach((cb) => cb.classList.add("hidden"));
+					numberings.forEach((n) => n.classList.remove("hidden"));
+					singleDeletes.forEach((btn) => btn.classList.remove("hidden"));
+
+					// Reset selections and UI back to default
+					rawInputs.forEach((input) => {
+						input.checked = false;
+						const li = input.closest("li");
+						li.classList.remove("border-red-500", "bg-red-900/20", "border-2");
+						li.classList.add("border-white/30", "border-4");
+					});
+					updateSelectedCount();
+				}
+			}
+
+			function updateSelectedCount() {
+				const count = document.querySelectorAll(".multi-select:checked").length;
+				const confirmBtn = document.getElementById("confirm-multi-btn");
+
+				if (confirmBtn) {
+					confirmBtn.textContent = `Delete Selected (${count})`;
+					if (count > 0) {
+						confirmBtn.disabled = false;
+						confirmBtn.classList.remove("opacity-50", "cursor-not-allowed");
+					} else {
+						confirmBtn.disabled = true;
+						confirmBtn.classList.add("opacity-50", "cursor-not-allowed");
+					}
+				}
+			}
+
+			// Intercept Clicks
+			document.addEventListener(
+				"click",
+				(e) => {
+					if (!multiMode) return;
+
+					const li = e.target.closest(".listings");
+					if (!li) return;
+
+					// Prevent HTMX navigation!
+					e.preventDefault();
+					e.stopPropagation();
+
+					const checkbox = li.querySelector(".multi-select");
+					if (!checkbox) return;
+
+					if (e.target !== checkbox) {
+						checkbox.checked = !checkbox.checked;
+					}
+
+					// Toggle Visuals (Thin red border when selected)
+					if (checkbox.checked) {
+						li.classList.remove("border-white/30", "border-4");
+						li.classList.add("border-red-500", "bg-red-900/20", "border-2");
+					} else {
+						li.classList.remove("border-red-500", "bg-red-900/20", "border-2");
+						li.classList.add("border-white/30", "border-4");
+					}
+
+					updateSelectedCount();
+				},
+				true,
+			);
+		</script>
+	}
 }

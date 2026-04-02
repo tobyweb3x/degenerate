@@ -27,6 +27,14 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
     vector_store.setup_qdrant_payload_index().await?;
     vector_store.enable_hnsw(32).await?;
 
+    let clone_vector_store_shutdown = shutdown.clone();
+    let vector_store_clone = vector_store.clone();
+    let vector_store_cleanup = tokio::spawn(async move {
+        vector_store_clone
+            .run_delete_old_points(clone_vector_store_shutdown)
+            .await
+    });
+
     let kalshi_vs = vector_store.clone();
     let polymarket_vs = vector_store.clone();
 
@@ -71,7 +79,6 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
     let grpc_handle = tokio::spawn(async move {
         grpc::run_grpc_client(grpc_shutdown, bot_to_grpc_rx, clone_grpc_to_bot_tx)
             .await
-            .map_err(anyhow::Error::from)
     });
 
     // // kalshi backfill
@@ -95,20 +102,12 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
     });
 
     let polymarket_shutdown = shutdown.clone();
-    let polymarket_handle = tokio::spawn(async move {
-        polymarket_client
-            .run_polymarket(polymarket_shutdown)
-            .await
-            .map_err(anyhow::Error::from)
-    });
+    let polymarket_handle =
+        tokio::spawn(async move { polymarket_client.run_polymarket(polymarket_shutdown).await });
 
     let kalshi_shutdown = shutdown.clone();
-    let kalshi_handle = tokio::spawn(async move {
-        kalshi_client
-            .run_kalshi(kalshi_shutdown)
-            .await
-            .map_err(anyhow::Error::from)
-    });
+    let kalshi_handle =
+        tokio::spawn(async move { kalshi_client.run_kalshi(kalshi_shutdown).await });
 
     tracing::info!("app startup done");
     Ok(OponIfa {
@@ -117,6 +116,7 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
         picker_comms_handle,
         picker_exec_handle,
         grpc_handle,
+        vector_store_cleanup,
     })
 }
 
@@ -126,4 +126,5 @@ pub struct OponIfa {
     pub picker_comms_handle: JoinHandle<Result<()>>,
     pub picker_exec_handle: JoinHandle<Result<()>>,
     pub grpc_handle: JoinHandle<Result<()>>,
+    pub vector_store_cleanup: JoinHandle<Result<()>>,
 }

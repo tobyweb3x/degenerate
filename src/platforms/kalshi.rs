@@ -18,7 +18,6 @@ pub struct MyKalshiClient {
     http_client: KalshiClient,
     ws_client: Arc<KalshiWebsocketClient>,
     qdrant_client: vector_store::VectorStore,
-    #[allow(dead_code)]
     account: kalshi_rs::Account,
     ws_tx: mpsc::Sender<WsEventMessage>,
 }
@@ -326,8 +325,8 @@ impl MyKalshiClient {
 
         for (tag, markets) in [
             (models::MarketTag::Soccer, soccer),
-            (models::MarketTag::NFL, football),
-            (models::MarketTag::NBA, basketball),
+            (models::MarketTag::Nfl, football),
+            (models::MarketTag::Nba, basketball),
         ] {
             let this = self.clone();
             let shutdown = shutdown.clone();

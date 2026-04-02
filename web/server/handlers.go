@@ -81,11 +81,9 @@ func (a *App) similarityHitsPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}(past_hits)
 
-	counts := countPlatformAchorsfromHit(templModels)
-
 	if isHXRequest(r) {
 		w.Header().Set("Content-Type", "text/html")
-		if err := frontend.SimilarityHitPartial(templModels, counts).Render(r.Context(), w); err != nil {
+		if err := frontend.SimilarityHitPartial(templModels).Render(r.Context(), w); err != nil {
 			a.serverError(w, err)
 			return
 		}
@@ -93,7 +91,7 @@ func (a *App) similarityHitsPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	if err := frontend.SimilarityHitsPage(templModels, counts).Render(context.TODO(), w); err != nil {
+	if err := frontend.SimilarityHitsPage(templModels).Render(context.TODO(), w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -112,12 +110,10 @@ func (a *App) arbsPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	platformCounts := countPlatformAchorsFromArb(templModels)
-	statusCount := countArbStatus(arbs...)
 
 	if isHXRequest(r) {
 		w.Header().Set("Content-Type", "text/html")
-		if err := frontend.ArbsPartial(templModels, platformCounts, statusCount).Render(r.Context(), w); err != nil {
+		if err := frontend.ArbsPartial(templModels).Render(r.Context(), w); err != nil {
 			a.serverError(w, err)
 			return
 		}
@@ -125,7 +121,7 @@ func (a *App) arbsPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	if err := frontend.ArbsPage(templModels, platformCounts, statusCount).Render(context.TODO(), w); err != nil {
+	if err := frontend.ArbsPage(templModels).Render(context.TODO(), w); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -413,15 +409,35 @@ func (a *App) softDeleteHit(w http.ResponseWriter, r *http.Request) {
 		a.serverError(w, err)
 		return
 	}
-	counts := countPlatformAchorsfromHit(templModels)
+	// counts := countPlatformAchorsfromHit(templModels)
 
 	w.Header().Set("Content-Type", "text/html")
-	if err := frontend.SimilarityHitPartial(templModels, counts).Render(r.Context(), w); err != nil {
+	if err := frontend.SimilarityHitPartial(templModels).Render(r.Context(), w); err != nil {
 		a.serverError(w, err)
 		return
 	}
 }
 
+func (a *App) bulkSoftDeleteHits(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		a.clientError(w, http.StatusBadRequest, fmt.Errorf("error parsing form request: %w", err))
+		return
+	}
+
+	correlationIDs := r.Form["ids"]
+	if len(correlationIDs) == 0 {
+		a.clientError(w, http.StatusBadRequest, errors.New("got empty correction_ids"))
+		return
+	}
+
+	if err := a.db.SoftDeleteSimilarityHitsBulk(r.Context(), correlationIDs); err != nil {
+		a.serverError(w, fmt.Errorf("error bulk deleting hitd: %w", err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	http.Redirect(w, r, "/hits", http.StatusSeeOther)
+}
 func (a *App) deleteArb(w http.ResponseWriter, r *http.Request) {
 	correlationId := chi.URLParam(r, "correlationId")
 	if correlationId == "" {
@@ -460,14 +476,46 @@ func (a *App) deleteArb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	platformCounts := countPlatformAchorsFromArb(templModels)
-	statuscCount := countArbStatus(arbs...)
-
 	w.Header().Set("Content-Type", "text/html")
-	if err := frontend.ArbsPartial(templModels, platformCounts, statuscCount).Render(r.Context(), w); err != nil {
+	if err := frontend.ArbsPartial(templModels).Render(r.Context(), w); err != nil {
 		a.serverError(w, err)
 		return
 	}
+}
+
+func (a *App) bulkDeleteArbs(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		a.clientError(w, http.StatusBadRequest, fmt.Errorf("error parsing form request: %w", err))
+		return
+	}
+
+	correlationIDs := r.Form["ids"]
+	if len(correlationIDs) == 0 {
+		a.clientError(w, http.StatusBadRequest, errors.New("got empty correction_ids"))
+		return
+	}
+
+	ebo := &protos.ServerEbo{
+		Action: &protos.ServerEbo_DeleteRunningArbs{
+			DeleteRunningArbs: &protos.DeleteRunningArbRequest{
+				CorrelationIds: correlationIDs,
+			},
+		},
+	}
+
+	select {
+	case a.GrpcComms <- ebo:
+		if err := a.db.DeleteArbsBulk(r.Context(), correlationIDs); err != nil {
+			a.serverError(w, fmt.Errorf("error bulk deleting hitd: %w", err))
+			return
+		}
+	case <-time.After(50 * time.Millisecond):
+		a.serverError(w, errors.New("GrpcComms send timeout"))
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	http.Redirect(w, r, "/arbs", http.StatusSeeOther)
 }
 
 const polymarketGetSlugURL = "https://gamma-api.polymarket.com/markets/slug"

@@ -1,20 +1,22 @@
 use crate::models::{self, protos};
 use anyhow::Context;
 use candle_core::Device;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use qdrant_client::{
     Qdrant,
     qdrant::{
         Condition, CreateCollectionBuilder, CreateFieldIndexCollectionBuilder, DeletePointsBuilder,
-        Direction, FieldType, Filter, HnswConfigDiffBuilder, OrderBy, PointId, PointStruct,
-        PointsIdsList, Query, QueryBatchPointsBuilder, QueryBatchResponse, QueryPoints,
-        QueryPointsBuilder, QueryResponse, ScrollPointsBuilder, UpdateCollectionBuilder,
-        UpsertPointsBuilder, VectorInput, VectorParamsBuilder, r#match::MatchValue,
+        Direction, FieldType, Filter, HnswConfigDiffBuilder, OrderBy, PointStruct, Query,
+        QueryBatchPointsBuilder, QueryBatchResponse, QueryPoints, QueryPointsBuilder,
+        QueryResponse, Range, ScrollPointsBuilder, UpdateCollectionBuilder, UpsertPointsBuilder,
+        VectorInput, VectorParamsBuilder, r#match::MatchValue,
     },
 };
 use sentence_transformers_rs::sentence_transformer::{
     SentenceTransformer, SentenceTransformerBuilder, Which,
 };
+use tokio_util::sync::CancellationToken;
+
 use std::convert::TryFrom;
 use std::sync::Arc;
 use tokio::{sync::mpsc, task};
@@ -89,7 +91,6 @@ impl VectorStore {
         })
     }
 
-    #[allow(dead_code)]
     pub async fn disable_hnsw(&self) -> anyhow::Result<()> {
         self.qdrant_client
             .update_collection(
@@ -262,7 +263,7 @@ impl VectorStore {
             .semantic_similarity_search(vec_data, score_threshold, 10, filter, true)
             .await?;
 
-        if response.result.len() == 0 {
+        if response.result.is_empty() {
             return anyhow::Ok(());
         }
 
@@ -336,7 +337,7 @@ impl VectorStore {
         }
         let responses = self.semantic_similarity_search_batch(query_points).await?;
 
-        if responses.result.len() == 0 {
+        if responses.result.is_empty() {
             return anyhow::Ok(());
         }
 
@@ -378,17 +379,52 @@ impl VectorStore {
         anyhow::Ok(())
     }
 
-    #[allow(dead_code)]
-    pub async fn delete_points(&self, ids: Vec<PointId>) -> anyhow::Result<()> {
-        self.qdrant_client
-            .delete_points(
-                DeletePointsBuilder::new("{collection_name}")
-                    .points(PointsIdsList { ids: ids })
-                    .wait(true),
-            )
-            .await?;
+    pub async fn run_delete_old_points(&self, shutdown: CancellationToken) -> anyhow::Result<()> {
+        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
 
-        anyhow::Ok(())
+        ticker.tick().await;
+        loop {
+            tokio::select! {
+                _ = shutdown.cancelled() => {
+                    tracing::info!(" Qdrant cleaner received shutdown signal");
+                    break;
+               }
+
+                _ = ticker.tick() => {
+                    let now = Utc::now();
+                    let cutoff_time = now - ChronoDuration::days(2);
+                    let cutoff_ms = cutoff_time.timestamp_millis();
+
+                    let filter = Filter::must([Condition::range(
+                        FIELD_CLOSE_TIME_MS,
+                        Range {
+                            lt: Some(cutoff_ms as f64),
+                            gt: None,
+                            gte: None,
+                            lte: None,
+                        },
+                    )]);
+
+                    match self
+                        .qdrant_client
+                        .delete_points(
+                            DeletePointsBuilder::new(self.collection_name)
+                                .points(filter)
+                                .wait(true),
+                        ).await {
+                            Ok(_) => {
+                                tracing::info!("✅ Qdrant Cleanup successful");
+                            },
+                            Err(e) => {
+                                tracing::error!("failed to execute delete_points against Qdrant: {e:#?}");
+                            }
+                        }
+                }
+
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn create_points<T>(
@@ -479,7 +515,6 @@ impl VectorStore {
         })
     }
 
-    #[allow(dead_code)]
     pub fn create_intra_platform_filter(
         platform: Option<protos::Platform>,
         market: &models::MarketTag,
@@ -522,17 +557,14 @@ impl VectorStore {
             .await
             .context("failed to scroll Qdrant for last insert time")?;
 
-        if let Some(point) = response.result.first() {
-            if let Some(value) = point.payload.get(FIELD_INSERTED_AT) {
-                if let Some(qdrant_client::qdrant::value::Kind::IntegerValue(ts_millis)) =
-                    &value.kind
-                {
-                    let date = DateTime::from_timestamp_millis(*ts_millis)
-                        .context("invalid timestamp in vectorDB")?;
+        if let Some(point) = response.result.first()
+            && let Some(value) = point.payload.get(FIELD_INSERTED_AT)
+            && let Some(qdrant_client::qdrant::value::Kind::IntegerValue(ts_millis)) = &value.kind
+        {
+            let date = DateTime::from_timestamp_millis(*ts_millis)
+                .context("invalid timestamp in vectorDB")?;
 
-                    return Ok(Some(date));
-                }
-            }
+            return Ok(Some(date));
         }
 
         Ok(None)

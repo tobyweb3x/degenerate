@@ -1,9 +1,8 @@
 pub mod comms {
     use crate::{
-        models::{self, CorrelationId, make_market_key, protos},
+        models::{self, make_market_key, protos},
         platforms,
     };
-    use alloy::network::any;
     use anyhow::{self, Context};
     use chrono::{DateTime, Duration, Utc};
     use kalshi_rs::websocket::models::KalshiSocketMessage;
@@ -323,7 +322,7 @@ pub mod comms {
                     leg_str: discovery.leg_str,
                 }),
 
-                token_id: token_id,
+                token_id,
             })
         }
 
@@ -602,7 +601,7 @@ pub mod comms {
 
             if let Some(cids) = self.book.registry.get(&market_key) {
                 for cid in cids {
-                    self.evaluate_arb(&cid);
+                    self.evaluate_arb(cid);
                 }
             }
         }
@@ -622,8 +621,8 @@ pub mod comms {
                 .get(watch.arb.r#match.market_key.as_str());
 
             if let (Some(a_tob), Some(m_tob)) = (anchor_tob, match_tob) {
-                let anchor_best_ask = needed_ask_price(&a_tob, &watch.arb.anchor);
-                let match_best_ask = needed_ask_price(&m_tob, &watch.arb.r#match);
+                let anchor_best_ask = needed_ask_price(a_tob, &watch.arb.anchor);
+                let match_best_ask = needed_ask_price(m_tob, &watch.arb.r#match);
 
                 let total_cost = anchor_best_ask + match_best_ask;
 

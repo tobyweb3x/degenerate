@@ -1,5 +1,7 @@
 package frontend
 
+import "fmt"
+
 templ document(pageMainComp, pageAfterBodyComp templ.Component) {
 	<!DOCTYPE html>
 	<html lang="en">
@@ -245,13 +247,15 @@ templ header() {
 	</header>
 }
 
-templ backBtn() {
-	<button type="button" onclick="history.back()" class="flex gap-1 justify-center items-center w-fit mr-auto">
-		<img
-			src="/assets/svg/ArrowLeft.svg"
-			alt=""
-			class="w-6 aspect-square cursor-pointer"
-		/>
-		<p class=" text-lg font-archivoSemiBold font-bold tracking-[0.001em] text-left">Back</p>
+templ backBtn(url string) {
+	<button type="button">
+		<a href={ templ.SafeURL(fmt.Sprintf("/%s", url)) } class="flex gap-1 justify-center items-center w-fit mr-auto">
+			<img
+				src="/assets/svg/ArrowLeft.svg"
+				alt=""
+				class="w-6 aspect-square cursor-pointer"
+			/>
+			<p class=" text-lg font-archivoSemiBold font-bold tracking-[0.001em] text-left">Back</p>
+		</a>
 	</button>
 }

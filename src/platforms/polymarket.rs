@@ -183,8 +183,8 @@ impl MyPolymarketClient {
     ) -> anyhow::Result<()> {
         let tags = [
             models::MarketTag::Soccer,
-            models::MarketTag::NBA,
-            models::MarketTag::NFL,
+            models::MarketTag::Nba,
+            models::MarketTag::Nfl,
         ];
 
         let mut join_set = JoinSet::new();
