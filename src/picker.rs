@@ -5,7 +5,9 @@ pub mod comms {
     };
     use anyhow::{self, Context};
     use chrono::{DateTime, Duration, Utc};
-    use kalshi_rs::websocket::models::KalshiSocketMessage;
+    use kalshi_rs::{
+        portfolio::models::CreateOrderRequest, websocket::models::KalshiSocketMessage,
+    };
     use polymarket_hft::client::polymarket::clob;
     use std::collections::HashSet;
     use tokio::sync::mpsc;
@@ -666,24 +668,60 @@ pub mod exec {
         models::{self, protos},
         platforms,
     };
+    use alloy_primitives::U256;
+    use alloy_signer_local::PrivateKeySigner;
     use anyhow::{self, Context};
+    use kalshi_rs::portfolio::models::CreateOrderRequest;
+    use polymarket_client_sdk::{
+        auth::{Normal, state::Authenticated},
+        clob,
+    };
+    use rust_decimal::prelude::FromStr;
+    use rust_decimal::{Decimal, prelude::ToPrimitive};
+    use std::collections::HashMap;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
     use tracing;
 
+    #[derive(Debug, Clone)]
+    pub enum ExecStatus {
+        Pending,
+        FilledMatched, // Both legs filled the exact same amount
+        LeggedHedging, // Mismatched fills, currently placing a sell order for the excess
+        Hedged,        // Excess was successfully placed on the order book
+        Failed,        // Something went wrong
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct ArbTradeRecord {
+        pub req: models::ExecutionRequest,
+        pub target_size: u64,
+        pub anchor_filled: u64,
+        pub match_filled: u64,
+        pub status: ExecStatus,
+    }
+
     pub struct PickerExec {
         platforms: platforms::Platfroms,
         execution_rx: mpsc::Receiver<models::ExecutionRequest>,
+        polymarket_clob_client: clob::Client<Authenticated<Normal>>,
+        trade_state: HashMap<models::CorrelationId, ArbTradeRecord>,
+        poly_signer: PrivateKeySigner,
     }
 
     impl PickerExec {
         pub fn new(
             platforms: platforms::Platfroms,
             execution_rx: mpsc::Receiver<models::ExecutionRequest>,
+            polymarket_clob_client: clob::Client<Authenticated<Normal>>,
+            poly_signer: PrivateKeySigner,
         ) -> Self {
             Self {
                 platforms,
                 execution_rx,
+                trade_state: HashMap::with_capacity(512),
+                polymarket_clob_client,
+                poly_signer,
             }
         }
 
@@ -728,48 +766,118 @@ pub mod exec {
             let (anchor_price, anchor_size) = anchor_metrics;
             let (match_price, match_size) = match_metrics;
 
-            let total_cost = anchor_price + match_price;
-            if total_cost >= 1.0 {
-                tracing::warn!(
-                    "arb for {} gone at execution: {total_cost}",
-                    req.correlation_id,
-                );
-                return Ok(());
-            }
+            let total_cost = {
+                let total_cost = anchor_price + match_price;
+                if total_cost >= Decimal::ONE {
+                    tracing::warn!(
+                        "arb for {} gone at execution: total_cost({total_cost})",
+                        req.correlation_id,
+                    );
+                    return Ok(());
+                }
 
-            let execution_size = anchor_size.min(match_size);
+                if !(total_cost > Decimal::ZERO && total_cost <= Decimal::new(985, 3)) {
+                    tracing::warn!(
+                        "Arb total_cost:${total_cost} is to close to 1, not worth it. Aborting."
+                    );
+                    return Ok(());
+                }
 
-            if execution_size <= 1.0 {
-                tracing::warn!(
-                    "low liquidity for execution({}:{execution_size})",
-                    req.correlation_id,
-                );
-                return Ok(());
-            }
+                total_cost
+            };
+
+            let execution_size = {
+                let execution_size = anchor_size.min(match_size).floor();
+                if execution_size <= Decimal::ONE {
+                    tracing::warn!(
+                        "low liquidity for execution: size({}:{execution_size})",
+                        req.correlation_id,
+                    );
+                    return Ok(());
+                }
+                execution_size
+            };
 
             tracing::info!(
-                "📊 Last Look [{}]: Cost = ${:.3} | Size = {}",
+                "📊 Last Look [{}]: Cost = ${total_cost} | Size = {execution_size}",
                 req.correlation_id,
-                total_cost,
-                execution_size
             );
 
-            if total_cost > 0.0 && total_cost <= 0.985 {
-                tracing::info!("✅ FIRING FAK ORDERS FOR [{}] !!", req.correlation_id);
-
-                // TODO: Fire your actual HTTP POST orders to Kalshi and Polymarket here!
-                // You can use tokio::try_join! here again to place both orders simultaneously!
-                //
-                // let (kalshi_res, poly_res) = tokio::try_join!(
-                //     self.platforms.kalshi().place_order(...),
-                //     self.platforms.polymarket().place_order(...)
-                // )?;
-            } else {
-                // The spread closed while we were fetching the orderbooks
-                tracing::warn!(
-                    "❌ Arb closed before execution. New cost: ${:.3}. Aborting.",
-                    total_cost
+            let (anchor_filled, match_filled) = {
+                let anchor_order = self.make_fak_order(
+                    &req.anchor,
+                    execution_size,
+                    anchor_price,
+                    &req.correlation_id,
                 );
+
+                let match_order = self.make_fak_order(
+                    &req.r#match,
+                    execution_size,
+                    match_price,
+                    &req.correlation_id,
+                );
+
+                let (anchor_res, match_res) = tokio::join!(anchor_order, match_order);
+
+                let anchor_filled = match &anchor_res {
+                    Ok((filled, _)) => *filled,
+                    Err(e) => {
+                        tracing::error!("🚨 Anchor Order Failed: {:?}", e);
+                        Decimal::ZERO
+                    }
+                };
+
+                let match_filled = match &match_res {
+                    Ok((filled, _)) => *filled,
+                    Err(e) => {
+                        tracing::error!("🚨 Match Order Failed: {:?}", e);
+                        Decimal::ZERO
+                    }
+                };
+
+                (anchor_filled, match_filled)
+            };
+
+            tracing::info!(
+                "📊 Executed [{}] - Anchor Filled: {}, Match Filled: {}",
+                req.correlation_id,
+                anchor_filled,
+                match_filled
+            );
+
+            if anchor_filled == match_filled {
+                if anchor_filled > Decimal::ZERO {
+                    tracing::info!(
+                        "🎉 PERFECT ARB! Both sides filled exactly {}.",
+                        anchor_filled
+                    );
+                } else {
+                    tracing::warn!("💨 Missed completely. Both sides filled 0.");
+                }
+                return Ok(());
+            }
+
+            let excess = anchor_filled - match_filled;
+
+            if excess > Decimal::ZERO {
+                tracing::warn!("🚨 LEGGED: Anchor excess of {excess}. Initiating Hedge Sell.");
+
+                // add 50 cents to buy price
+                let hedge_price = anchor_price + Decimal::new(2, 2); // anchor_price + 0.02
+
+                self.hedge_sell_order(&req.anchor, excess, hedge_price)
+                    .await
+                    .context("anchor hedge_sell_order failed")?;
+            } else if excess < Decimal::ZERO {
+                let excess_abs = excess.abs();
+                tracing::warn!("🚨 LEGGED: Match excess of {excess_abs}. Initiating Hedge Sell.");
+
+                let hedge_price = match_price + Decimal::new(2, 2); // match_price + 0.02
+
+                self.hedge_sell_order(&req.r#match, excess_abs, hedge_price)
+                    .await
+                    .context("match hedge_sell_order failed")?;
             }
 
             Ok(())
@@ -778,7 +886,7 @@ pub mod exec {
         async fn get_execution_metrics_from_http(
             &self,
             arb: models::ArbMinifiedInfo,
-        ) -> anyhow::Result<(f32, f32)> {
+        ) -> anyhow::Result<(Decimal, Decimal)> {
             match arb.platform {
                 protos::Platform::Polymarket => {
                     let summary = self
@@ -792,14 +900,11 @@ pub mod exec {
                         .first()
                         .context("Polymarket ask book is empty!")?;
 
-                    let price = best_ask
-                        .price
-                        .parse::<f32>()
-                        .context("Parse Poly price error")?;
-                    let size = best_ask
-                        .size
-                        .parse::<f32>()
-                        .context("Parse Poly size error")?;
+                    let price = Decimal::from_str(&best_ask.price)
+                        .context("Failed to parse Polymarket price into Decimal")?;
+
+                    let size = Decimal::from_str(&best_ask.size)
+                        .context("Failed to parse Polymarket size into Decimal")?;
 
                     Ok((price, size))
                 }
@@ -809,8 +914,11 @@ pub mod exec {
                         .platforms
                         .kalshi()
                         .http_client()
-                        .get_market_orderbook(&arb.market_id, Some(90)) // market_id here is actually the ticker
+                        .get_market_orderbook(&arb.market_id, Some(90))
                         .await?;
+
+                    // Create a perfect 1.0 representation for the Kalshi math
+                    let one_dollar = Decimal::ONE;
 
                     match arb.leg {
                         // BUYING YES: We trade against the Best NO Bid
@@ -822,11 +930,15 @@ pub mod exec {
 
                             let best_no_bid = no_book.last().context("Kalshi NO bids empty")?;
 
-                            let no_bid_price = best_no_bid.0.parse::<f32>()?;
+                            let no_bid_price = Decimal::from_str(&best_no_bid.0)
+                                .context("Failed to parse Kalshi NO bid price")?;
 
-                            let no_bid_size = best_no_bid.1 as f32;
+                            let no_bid_size = Decimal::from_str(&best_no_bid.1)
+                                .context("Failed to convert Kalshi NO bid size")?;
 
-                            Ok((1.0 - no_bid_price, no_bid_size))
+                            let yes_ask_price = one_dollar - no_bid_price;
+
+                            Ok((yes_ask_price, no_bid_size))
                         }
 
                         // BUYING NO: We trade against the Best YES Bid
@@ -838,97 +950,253 @@ pub mod exec {
 
                             let best_yes_bid = yes_book.last().context("Kalshi YES bids empty")?;
 
-                            let yes_bid_price = best_yes_bid.0.parse::<f32>()?;
-                            let yes_bid_size = best_yes_bid.1 as f32;
+                            let yes_bid_price = Decimal::from_str(&best_yes_bid.0)
+                                .context("Failed to parse Kalshi YES bid price")?;
 
-                            Ok((1.0 - yes_bid_price, yes_bid_size))
+                            let yes_bid_size = Decimal::from_str(&best_yes_bid.1)
+                                .context("Failed to convert Kalshi YES bid size")?;
+
+                            let no_ask_price = one_dollar - yes_bid_price;
+
+                            Ok((no_ask_price, yes_bid_size))
                         }
                     }
                 }
             }
         }
 
-        // Simulates walking two order books to find the maximum profitable arbitrage size.
-        //
-        // * `anchor_asks`: The list of available asks for Leg 1 (sorted lowest price to highest)
-        // * `match_asks`: The list of available asks for Leg 2 (sorted lowest price to highest)
-        // * `max_cost`: The maximum combined price you are willing to pay (e.g., 0.985)
-        //
-        // Returns: (Total Contracts to Buy, Total Cost per Contract, Total Capital Required)
-        // pub fn walk_books(
-        //     mut anchor_asks: Vec<PriceLevel>,
-        //     mut match_asks: Vec<PriceLevel>,
-        //     max_cost_threshold: f32,
-        // ) -> Option<(f32, f32, f32)> {
-        //     let mut total_contracts = 0.0;
-        //     let mut total_capital_spent = 0.0;
+        async fn make_fak_order(
+            &self,
+            leg: &models::ArbMinifiedInfo,
+            size: Decimal,
+            limit_price: Decimal,
+            correlation_id: &models::CorrelationId,
+        ) -> anyhow::Result<(Decimal, Decimal)> {
+            match leg.platform {
+                protos::Platform::Kalshi => {
+                    let side_str = match leg.leg {
+                        protos::Leg::Left => "yes",
+                        protos::Leg::Right => "no",
+                    };
 
-        //     // Use pointers to track which level we are currently eating
-        //     let mut anchor_idx = 0;
-        //     let mut match_idx = 0;
+                    let safe_price = (limit_price * Decimal::ONE_HUNDRED)
+                        .floor()
+                        .to_u64()
+                        .context("error converting decimal to u64")?;
 
-        //     // Keep looping as long as we have levels left on BOTH exchanges
-        //     while anchor_idx < anchor_asks.len() && match_idx < match_asks.len() {
-        //         let a_level = &mut anchor_asks[anchor_idx];
-        //         let m_level = &mut match_asks[match_idx];
+                    let safe_size = size.to_u64().context("Size too large or negative")?;
 
-        //         // 1. Check Profitability
-        //         let current_cost = a_level.price + m_level.price;
+                    if safe_size == 0 {
+                        return Err(anyhow::anyhow!("Calculated size should not 0"));
+                    }
 
-        //         // If the current combination of levels is too expensive, we stop walking.
-        //         if current_cost >= max_cost_threshold {
-        //             break;
-        //         }
+                    let client_order_id = models::generate_uuid_v5(format!(
+                        "{}:{}:{}",
+                        correlation_id, safe_size, limit_price
+                    ));
 
-        //         // 2. Determine Executable Size
-        //         // We can only buy as much as the weakest link at this specific price level
-        //         let matched_size = a_level.size.min(m_level.size);
+                    let req = CreateOrderRequest {
+                        ticker: leg.token_id.clone(),
+                        action: "buy".to_string(),
+                        side: side_str.to_string(),
+                        count: Some(safe_size),
+                        r#type: "limit".to_string(),
 
-        //         if matched_size < 1.0 {
-        //             // Move past dust
-        //             if a_level.size < 1.0 {
-        //                 anchor_idx += 1;
-        //             }
-        //             if m_level.size < 1.0 {
-        //                 match_idx += 1;
-        //             }
-        //             continue;
-        //         }
+                        yes_price: if side_str == "yes" {
+                            Some(safe_price)
+                        } else {
+                            None
+                        },
+                        no_price: if side_str == "no" {
+                            Some(safe_price)
+                        } else {
+                            None
+                        },
 
-        //         // 3. "Execute" the simulated trade
-        //         total_contracts += matched_size;
-        //         total_capital_spent += matched_size * current_cost;
+                        client_order_id: Some(client_order_id),
+                        post_only: Some(false),
 
-        //         // 4. Deplete the sizes from the current levels
-        //         a_level.size -= matched_size;
-        //         m_level.size -= matched_size;
+                        // FAK
+                        time_in_force: Some("immediate_or_cancel".to_string()),
 
-        //         // 5. Advance the pointers if a level is completely eaten
-        //         if a_level.size <= 0.001 {
-        //             anchor_idx += 1;
-        //         }
-        //         if m_level.size <= 0.001 {
-        //             match_idx += 1;
-        //         }
-        //     }
+                        ..Default::default()
+                    };
 
-        //     if total_contracts < 1.0 {
-        //         return None; // No meaningful arb found
-        //     }
+                    let order_response = self
+                        .platforms
+                        .kalshi()
+                        .http_client()
+                        .create_order(&req)
+                        .await
+                        .context("error creating kalshi order")?;
 
-        //     let average_cost_per_contract = total_capital_spent / total_contracts;
+                    let filled =
+                        models::opt_str_to_decimal_strict(&order_response.order.fill_count_fp)?;
 
-        //     Some((
-        //         total_contracts,
-        //         average_cost_per_contract,
-        //         total_capital_spent,
-        //     ))
-        // }
+                    let remaining = models::opt_str_to_decimal_strict(
+                        &order_response.order.remaining_count_fp,
+                    )?;
+
+                    tracing::info!(
+                        "Kalshi Order Executed: Requested {size}, Filled {filled}, Remaining {remaining}"
+                    );
+
+                    Ok((filled, remaining))
+                }
+
+                protos::Platform::Polymarket => {
+                    let poly_scale = Decimal::new(1_000_000, 0);
+
+                    let order = self
+                        .polymarket_clob_client
+                        .limit_order()
+                        .token_id(U256::from_str(&leg.token_id).context("invalid hex token_id")?)
+                        .size(size)
+                        .price(limit_price.round_dp(4))
+                        .side(clob::types::Side::Buy)
+                        .order_type(clob::types::OrderType::FAK)
+                        .build()
+                        .await
+                        .context("error creating polymarket order")?;
+
+                    let signed_order = self
+                        .polymarket_clob_client
+                        .sign(&self.poly_signer, order)
+                        .await?;
+                    let response = self.polymarket_clob_client.post_order(signed_order).await?;
+
+                    if !response.success {
+                        let err_msg = response
+                            .error_msg
+                            .unwrap_or_else(|| "Unknown error".to_string());
+                        tracing::error!("❌ Polymarket rejected order: {}", err_msg);
+                        return Err(anyhow::anyhow!("Polymarket order failed: {}", err_msg));
+                    }
+
+                    let raw_filled = response.taking_amount;
+                    let filled = raw_filled / poly_scale;
+
+                    let remaining = size - filled;
+
+                    tracing::info!(
+                        "Polymarket Order Executed: Requested {size}, Filled {filled}, Remaining {remaining}",
+                    );
+
+                    if response.status == clob::types::OrderStatusType::Unmatched
+                        || filled == Decimal::ZERO
+                    {
+                        tracing::warn!(
+                            "Polymarket order was completely unmatched (Liquidity vanished)."
+                        );
+                    }
+
+                    Ok((filled, remaining))
+                }
+            }
+        }
+
+        async fn hedge_sell_order(
+            &self,
+            leg: &models::ArbMinifiedInfo,
+            excess_size: Decimal,
+            sell_price_dollars: Decimal,
+        ) -> anyhow::Result<()> {
+            let safe_sell_price = sell_price_dollars.min(Decimal::new(99, 2)); // incase the pump w/ 5cents goes above $1
+            let price_cents = (safe_sell_price * Decimal::ONE_HUNDRED)
+                .floor()
+                .to_u64()
+                .unwrap_or(99);
+
+            match leg.platform {
+                protos::Platform::Kalshi => {
+                    let side_str = match leg.leg {
+                        protos::Leg::Left => "yes",
+                        protos::Leg::Right => "no",
+                    };
+
+                    let safe_excess_size = excess_size.floor().to_u64().unwrap_or(0);
+
+                    if safe_excess_size == 0 {
+                        tracing::warn!("Hedge size too small (rounds to 0). Skipping.");
+                        return Ok(());
+                    }
+
+                    let req = CreateOrderRequest {
+                        ticker: leg.token_id.clone(),
+                        action: "sell".to_string(),
+                        side: side_str.to_string(),
+                        count: Some(safe_excess_size),
+                        r#type: "limit".to_string(),
+
+                        yes_price: if side_str == "yes" {
+                            Some(price_cents)
+                        } else {
+                            None
+                        },
+                        no_price: if side_str == "no" {
+                            Some(price_cents)
+                        } else {
+                            None
+                        },
+
+                        client_order_id: Some(uuid::Uuid::new_v4().to_string()),
+                        post_only: Some(true),
+
+                        time_in_force: Some("good_till_canceled".to_string()),
+                        ..Default::default()
+                    };
+
+                    self.platforms
+                        .kalshi()
+                        .http_client()
+                        .create_order(&req)
+                        .await
+                        .context("Failed to post kalshi hedge order")?;
+
+                    tracing::info!("✅ Hedge sell order placed on Kalshi");
+                    Ok(())
+                }
+
+                protos::Platform::Polymarket => {
+                    let order = self
+                        .polymarket_clob_client
+                        .limit_order()
+                        .token_id(U256::from_str(&leg.token_id).context("invalid hex token_id")?)
+                        .size(excess_size.floor())
+                        .price(safe_sell_price)
+                        .side(clob::types::Side::Sell)
+                        .order_type(clob::types::OrderType::GTC)
+                        .build()
+                        .await
+                        .context("Failed to build Polymarket hedge order")?;
+
+                    let signed_order = self
+                        .polymarket_clob_client
+                        .sign(&self.poly_signer, order)
+                        .await
+                        .context("Failed to sign Polymarket hedge order")?;
+
+                    let response = self
+                        .polymarket_clob_client
+                        .post_order(signed_order)
+                        .await
+                        .context("Failed to post Polymarket hedge order")?;
+
+                    if !response.success {
+                        let err_msg = response
+                            .error_msg
+                            .unwrap_or_else(|| "Unknown error".to_string());
+                        tracing::error!("Polymarket rejected hedge sell order: {}", err_msg);
+                        return Err(anyhow::anyhow!("Polymarket hedge failed: {}", err_msg));
+                    }
+
+                    tracing::info!(
+                        "✅ Hedge SELL order placed on Polymarket at ${}",
+                        safe_sell_price
+                    );
+                    Ok(())
+                }
+            }
+        }
     }
-
-    // #[derive(Debug, Clone)]
-    // pub struct PriceLevel {
-    //     pub price: f32,
-    //     pub size: f32,
-    // }
 }

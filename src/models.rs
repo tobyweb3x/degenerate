@@ -4,6 +4,8 @@ use polymarket_hft::client::polymarket::gamma;
 use qdrant_client::{Payload, qdrant};
 
 use once_cell::sync::Lazy;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::FromStr;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::json;
 use std::{collections::HashMap, fmt};
@@ -685,9 +687,24 @@ impl TryFrom<protos::Arb> for ArbMinifiedInfoPair {
 
 #[derive(Debug, Clone)]
 pub struct ExecutionRequest {
-    pub correlation_id: String,
+    pub correlation_id: CorrelationId,
     pub anchor: ArbMinifiedInfo,
     pub r#match: ArbMinifiedInfo,
     pub anchor_price: f32,
     pub match_price: f32,
 }
+
+pub fn str_to_decimal(value: &str) -> anyhow::Result<Decimal> {
+    let dec = Decimal::from_str(value)
+        .map_err(|e| anyhow::anyhow!("Failed to parse '{}' into Decimal: {}", value, e))?;
+
+    Ok(dec)
+}
+
+pub fn opt_str_to_decimal_strict(value: &Option<String>) -> anyhow::Result<Decimal> {
+    value
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("Expected value but got None"))
+        .and_then(str_to_decimal)
+}
+

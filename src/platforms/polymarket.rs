@@ -2,18 +2,15 @@ use super::{WsEventMessage, format_duration_ago};
 use crate::models::QdrantMarketConverter;
 use crate::models::{self, protos};
 use crate::vector_store;
-use alloy::{hex, signers::local::PrivateKeySigner};
 use anyhow::Context;
 use chrono::{Duration as ChronoDuration, SecondsFormat, Utc};
 use polymarket_hft::client::polymarket::{
     clob::{self, ws::WsMessage},
     gamma,
 };
-use std::{collections::HashSet, fs, path::Path, time::Duration};
+use std::{collections::HashSet, fs, time::Duration};
 use tokio::{sync::mpsc, task::JoinSet};
 use tokio_util::sync::CancellationToken;
-
-const PRIVATE_KEY_FILE: &str = "privateKey.hex";
 
 #[derive(Clone)]
 pub struct MyPolymarketClient {
@@ -54,8 +51,6 @@ impl MyPolymarketClient {
     }
 
     pub async fn run_polymarket(&mut self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        let _signer = get_signer()?;
-
         self.clob_ws_client.subscribe_market(vec![], true).await?;
 
         let duration = std::time::Duration::from_secs(60 * 60 + 30 * 60);
@@ -345,30 +340,7 @@ impl MyPolymarketClient {
     }
 }
 
-fn get_signer() -> anyhow::Result<PrivateKeySigner> {
-    let signer = if Path::new(PRIVATE_KEY_FILE).exists() {
-        load_wallet()?
-    } else {
-        write_new_wallet()?
-    };
-
-    Ok(signer)
-}
-
-fn write_new_wallet() -> anyhow::Result<PrivateKeySigner> {
-    let signer = PrivateKeySigner::random();
-    let hex_encodeded_private_key = hex::encode(signer.to_bytes());
-
-    tracing::info!("New wallet created");
-    tracing::info!("Address: {}", signer.address());
-
-    fs::write(Path::new(PRIVATE_KEY_FILE), hex_encodeded_private_key)?;
-    Ok(signer)
-}
-
-fn load_wallet() -> anyhow::Result<PrivateKeySigner> {
-    let data = fs::read_to_string(PRIVATE_KEY_FILE)?;
-    let signer = data.trim().parse::<PrivateKeySigner>()?;
-
-    Ok(signer)
+pub fn get_signer() -> anyhow::Result<String> {
+    let data = fs::read_to_string("privateKey.hex").context("error getting private_key")?;
+    Ok(data)
 }
