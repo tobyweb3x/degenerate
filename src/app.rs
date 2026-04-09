@@ -21,10 +21,13 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
     let (ws_tx, ws_rx) = mpsc::channel::<platforms::WsEventMessage>(1_024); // takes platform wss messages from platform to picker-comms
     let (execution_tx, execution_rx) = mpsc::channel(512); // takes messages from picker-comms to picker-exec
 
-    // vector store
+    // =    // vector store
     let (vector_store, vector_store_cleanup_handle) = {
-        let vector_store = vector_store::VectorStore::new_metal(
-            "http://localhost:6334",
+        let vector_store = vector_store::VectorStore::new_auto(
+            // "http://localhost:6334",
+            std::env::var("QDRANT_URL")
+                .unwrap_or_else(|_| "http://localhost:6334".to_string())
+                .as_str(),
             vector_store::COLLECTION_NAME,
             bot_to_grpc_tx.clone(),
         )
@@ -85,6 +88,8 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
     // picker-exec
     let picker_exec_handle = tokio::spawn({
         let picker_exce_shutdown = shutdown.clone();
+        let bot_to_grpc_tx = bot_to_grpc_tx.clone();
+
         let platform =
             platforms::Platfroms::new(kalshi_client.clone(), polymarket_client.clone()).clone();
 
@@ -103,6 +108,7 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
                 execution_rx,
                 polymarket_clob_client,
                 signer,
+                bot_to_grpc_tx,
             );
             picker.run_picker_exe(picker_exce_shutdown).await
         }

@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shopspring/decimal"
 )
 
 type BulkInsertSimilarityHitsParams struct {
@@ -62,6 +63,79 @@ func (q *Queries) DeleteSimilarityHitsBulk(ctx context.Context, correlationIds [
 	return err
 }
 
+const getAllExcessFills = `-- name: GetAllExcessFills :many
+SELECT id, correlation_id, found_at, platform, order_id, fill_size, fill_cost
+FROM excess_fill
+ORDER BY found_at DESC
+`
+
+func (q *Queries) GetAllExcessFills(ctx context.Context) ([]ExcessFill, error) {
+	rows, err := q.db.Query(ctx, getAllExcessFills)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ExcessFill
+	for rows.Next() {
+		var i ExcessFill
+		if err := rows.Scan(
+			&i.ID,
+			&i.CorrelationID,
+			&i.FoundAt,
+			&i.Platform,
+			&i.OrderID,
+			&i.FillSize,
+			&i.FillCost,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllOrders = `-- name: GetAllOrders :many
+SELECT id, correlation_id, found_at, arbs, anchor_cost, match_cost, anchor_fill, match_fill, excess_fill, anchor_order_id, match_order_id, created_at
+FROM orders
+ORDER BY found_at DESC
+`
+
+func (q *Queries) GetAllOrders(ctx context.Context) ([]Order, error) {
+	rows, err := q.db.Query(ctx, getAllOrders)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Order
+	for rows.Next() {
+		var i Order
+		if err := rows.Scan(
+			&i.ID,
+			&i.CorrelationID,
+			&i.FoundAt,
+			&i.Arbs,
+			&i.AnchorCost,
+			&i.MatchCost,
+			&i.AnchorFill,
+			&i.MatchFill,
+			&i.ExcessFill,
+			&i.AnchorOrderID,
+			&i.MatchOrderID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getArbByCorrelationID = `-- name: GetArbByCorrelationID :one
 SELECT id, correlation_id, found_at, arbs, confirmed, running, arb_type, created_at
 FROM arbs
@@ -82,6 +156,127 @@ func (q *Queries) GetArbByCorrelationID(ctx context.Context, correlationID strin
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getExcessFillByCorrelationID = `-- name: GetExcessFillByCorrelationID :one
+SELECT id, correlation_id, found_at, platform, order_id, fill_size, fill_cost
+FROM excess_fill
+WHERE correlation_id = $1
+`
+
+func (q *Queries) GetExcessFillByCorrelationID(ctx context.Context, correlationID string) (ExcessFill, error) {
+	row := q.db.QueryRow(ctx, getExcessFillByCorrelationID, correlationID)
+	var i ExcessFill
+	err := row.Scan(
+		&i.ID,
+		&i.CorrelationID,
+		&i.FoundAt,
+		&i.Platform,
+		&i.OrderID,
+		&i.FillSize,
+		&i.FillCost,
+	)
+	return i, err
+}
+
+const getOrderByCorrelationID = `-- name: GetOrderByCorrelationID :one
+SELECT id, correlation_id, found_at, arbs, anchor_cost, match_cost, anchor_fill, match_fill, excess_fill, anchor_order_id, match_order_id, created_at
+FROM orders
+WHERE correlation_id = $1
+`
+
+func (q *Queries) GetOrderByCorrelationID(ctx context.Context, correlationID string) (Order, error) {
+	row := q.db.QueryRow(ctx, getOrderByCorrelationID, correlationID)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.CorrelationID,
+		&i.FoundAt,
+		&i.Arbs,
+		&i.AnchorCost,
+		&i.MatchCost,
+		&i.AnchorFill,
+		&i.MatchFill,
+		&i.ExcessFill,
+		&i.AnchorOrderID,
+		&i.MatchOrderID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getOrderWithExcess = `-- name: GetOrderWithExcess :many
+SELECT 
+    o.correlation_id,
+    o.found_at,
+    o.arbs,
+    o.anchor_cost,
+    o.match_cost,
+    o.anchor_fill,
+    o.match_fill,
+    o.excess_fill,
+    o.anchor_order_id,
+    o.match_order_id,
+    e.platform AS hedge_platform,
+    e.order_id AS hedge_order_id,
+    e.fill_size AS hedge_fill_size,
+    e.fill_cost AS hedge_fill_cost
+FROM orders o
+LEFT JOIN excess_fill e ON o.correlation_id = e.correlation_id
+ORDER BY o.found_at DESC
+LIMIT $1
+`
+
+type GetOrderWithExcessRow struct {
+	CorrelationID string             `json:"correlation_id"`
+	FoundAt       pgtype.Timestamptz `json:"found_at"`
+	Arbs          []byte             `json:"arbs"`
+	AnchorCost    decimal.Decimal    `json:"anchor_cost"`
+	MatchCost     decimal.Decimal    `json:"match_cost"`
+	AnchorFill    decimal.Decimal    `json:"anchor_fill"`
+	MatchFill     decimal.Decimal    `json:"match_fill"`
+	ExcessFill    decimal.Decimal    `json:"excess_fill"`
+	AnchorOrderID string             `json:"anchor_order_id"`
+	MatchOrderID  string             `json:"match_order_id"`
+	HedgePlatform pgtype.Text        `json:"hedge_platform"`
+	HedgeOrderID  pgtype.Text        `json:"hedge_order_id"`
+	HedgeFillSize pgtype.Numeric     `json:"hedge_fill_size"`
+	HedgeFillCost pgtype.Numeric     `json:"hedge_fill_cost"`
+}
+
+func (q *Queries) GetOrderWithExcess(ctx context.Context, limit int32) ([]GetOrderWithExcessRow, error) {
+	rows, err := q.db.Query(ctx, getOrderWithExcess, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetOrderWithExcessRow
+	for rows.Next() {
+		var i GetOrderWithExcessRow
+		if err := rows.Scan(
+			&i.CorrelationID,
+			&i.FoundAt,
+			&i.Arbs,
+			&i.AnchorCost,
+			&i.MatchCost,
+			&i.AnchorFill,
+			&i.MatchFill,
+			&i.ExcessFill,
+			&i.AnchorOrderID,
+			&i.MatchOrderID,
+			&i.HedgePlatform,
+			&i.HedgeOrderID,
+			&i.HedgeFillSize,
+			&i.HedgeFillCost,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getRecentArbs = `-- name: GetRecentArbs :many
@@ -238,6 +433,40 @@ func (q *Queries) HardDeleteOldSimilarityHits(ctx context.Context, deletedAt pgt
 	return err
 }
 
+const insertExcessFill = `-- name: InsertExcessFill :exec
+INSERT INTO excess_fill (
+    correlation_id,
+    found_at,
+    platform,
+    order_id,
+    fill_size,
+    fill_cost
+) VALUES (
+    $1, $2, $3, $4, $5, $6
+)
+`
+
+type InsertExcessFillParams struct {
+	CorrelationID string             `json:"correlation_id"`
+	FoundAt       pgtype.Timestamptz `json:"found_at"`
+	Platform      string             `json:"platform"`
+	OrderID       string             `json:"order_id"`
+	FillSize      decimal.Decimal    `json:"fill_size"`
+	FillCost      decimal.Decimal    `json:"fill_cost"`
+}
+
+func (q *Queries) InsertExcessFill(ctx context.Context, arg InsertExcessFillParams) error {
+	_, err := q.db.Exec(ctx, insertExcessFill,
+		arg.CorrelationID,
+		arg.FoundAt,
+		arg.Platform,
+		arg.OrderID,
+		arg.FillSize,
+		arg.FillCost,
+	)
+	return err
+}
+
 const insertNewArb = `-- name: InsertNewArb :exec
 INSERT INTO arbs (
     correlation_id,
@@ -290,6 +519,61 @@ func (q *Queries) InsertNewSimilarityHit(ctx context.Context, arg InsertNewSimil
 		arg.FoundAt,
 		arg.SimilarityHit,
 		arg.ArbType,
+	)
+	return err
+}
+
+const insertOrder = `-- name: InsertOrder :exec
+INSERT INTO orders (
+    correlation_id, 
+    found_at, 
+    arbs, 
+    anchor_cost, 
+    match_cost, 
+    anchor_fill, 
+    match_fill, 
+    excess_fill, 
+    anchor_order_id, 
+    match_order_id
+) VALUES (
+    $1,
+    $2,
+    (SELECT arbs.arbs FROM arbs WHERE arbs.correlation_id = $3),
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10
+)
+`
+
+type InsertOrderParams struct {
+	OrderCorrelationID string             `json:"order_correlation_id"`
+	FoundAt            pgtype.Timestamptz `json:"found_at"`
+	ArbCorrelationID   string             `json:"arb_correlation_id"`
+	AnchorCost         decimal.Decimal    `json:"anchor_cost"`
+	MatchCost          decimal.Decimal    `json:"match_cost"`
+	AnchorFill         decimal.Decimal    `json:"anchor_fill"`
+	MatchFill          decimal.Decimal    `json:"match_fill"`
+	ExcessFill         decimal.Decimal    `json:"excess_fill"`
+	AnchorOrderID      string             `json:"anchor_order_id"`
+	MatchOrderID       string             `json:"match_order_id"`
+}
+
+func (q *Queries) InsertOrder(ctx context.Context, arg InsertOrderParams) error {
+	_, err := q.db.Exec(ctx, insertOrder,
+		arg.OrderCorrelationID,
+		arg.FoundAt,
+		arg.ArbCorrelationID,
+		arg.AnchorCost,
+		arg.MatchCost,
+		arg.AnchorFill,
+		arg.MatchFill,
+		arg.ExcessFill,
+		arg.AnchorOrderID,
+		arg.MatchOrderID,
 	)
 	return err
 }

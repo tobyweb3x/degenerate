@@ -1,12 +1,14 @@
 use crate::models::protos::{self, RunningArbsRequest, client_ebo};
 use anyhow::Context;
-use std::time::{self, Duration};
+use std::{
+    str::FromStr,
+    time::{self, Duration},
+};
 use tokio::{sync::mpsc, time as tokio_time};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Endpoint;
 
-const GRPC_URL: &str = "http://127.0.0.1:50051";
 const KEEPALIVE_TIME: time::Duration = time::Duration::from_secs(10);
 const KEEPALIVE_TIMEOUT: time::Duration = time::Duration::from_secs(2);
 const MAX_RETRIES: usize = 30;
@@ -29,10 +31,13 @@ pub async fn run_grpc_client(
             retries + 1,
             MAX_RETRIES
         );
+        let grpc_url =
+            std::env::var("GRPC_URL").unwrap_or_else(|_| "http://127.0.0.1:50051".to_string());
 
         let session_start = time::Instant::now();
 
-        let endpoint = Endpoint::from_static(GRPC_URL)
+        let endpoint = Endpoint::from_shared(grpc_url)
+            .context("grpc_url invalid")?
             .http2_keep_alive_interval(KEEPALIVE_TIME)
             .keep_alive_timeout(KEEPALIVE_TIMEOUT)
             .keep_alive_while_idle(true)

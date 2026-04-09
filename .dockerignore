@@ -1,0 +1,7 @@
+.git
+.idea
+.gitignore
+target
+web
+Dockerfile*
+docker-compose*

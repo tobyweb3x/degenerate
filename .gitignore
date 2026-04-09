@@ -5,3 +5,6 @@
 *.hex
 *.pem
 json/
+*.zip
+/vendor
+.cargo/

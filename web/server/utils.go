@@ -75,7 +75,7 @@ func setLeg(leg int) (protos.Leg, error) {
 
 func newCrossPlatformArbDiscovery(arbs []*protos.DiscoveredArb) *protos.ServerEbo {
 	return &protos.ServerEbo{
-		FoundAt: time.Now().UnixMilli(),
+		ActionAt: time.Now().UnixMilli(),
 		Action: &protos.ServerEbo_CrossPlatformArbDiscovery{
 			CrossPlatformArbDiscovery: &protos.DiscoveredArbList{
 				Arbs: arbs,

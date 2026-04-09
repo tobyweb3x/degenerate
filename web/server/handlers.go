@@ -367,7 +367,7 @@ func (a *App) resolveArbConfirmAndRun(w http.ResponseWriter, r *http.Request) {
 		Action: &protos.ServerEbo_ConfirmedAndRun{
 			ConfirmedAndRun: &arb_ebo,
 		},
-		FoundAt: time.Now().UnixMilli(),
+		ActionAt: time.Now().UnixMilli(),
 	}
 
 	select {

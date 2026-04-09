@@ -40,6 +40,10 @@ func main() {
 	}
 	defer conn.Close()
 
+	if err := conn.Ping(context.Background()); err != nil {
+		log.Fatalf("db connection not established: err: %s", err.Error())
+	}
+
 	// app
 	app, err := backend.NewApp(conn, &environmentalVariables)
 	if err != nil {

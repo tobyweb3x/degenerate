@@ -169,3 +169,32 @@ func (r *Repository) SoftDeleteSimilarityHitsBulk(ctx context.Context, correlati
 func (r *Repository) DeleteArbsBulk(ctx context.Context, correlationIDs []string) error {
 	return r.dbQuery.DeleteArbsBulk(ctx, correlationIDs)
 }
+
+func (r *Repository) InsertNewOrder(ctx context.Context, param postgres.InsertOrderParams) error {
+	return r.dbQuery.InsertOrder(ctx, param)
+}
+
+func (r *Repository) GetOrderByCorrelationID(ctx context.Context, correlationID string) (postgres.Order, error) {
+	return r.dbQuery.GetOrderByCorrelationID(ctx, correlationID)
+}
+
+func (r *Repository) GetAllOrders(ctx context.Context) ([]postgres.Order, error) {
+	return r.dbQuery.GetAllOrders(ctx)
+}
+
+func (r *Repository) InsertNewExcessFill(ctx context.Context, param postgres.InsertExcessFillParams) error {
+	return r.dbQuery.InsertExcessFill(ctx, param)
+}
+
+func (r *Repository) GetExcessFillByCorrelationID(ctx context.Context, correlationID string) (postgres.ExcessFill, error) {
+	return r.dbQuery.GetExcessFillByCorrelationID(ctx, correlationID)
+}
+
+func (r *Repository) GetAllExcessFills(ctx context.Context) ([]postgres.ExcessFill, error) {
+	return r.dbQuery.GetAllExcessFills(ctx)
+}
+
+func (r *Repository) GetOrderWithExcess(ctx context.Context, limit uint32) ([]postgres.GetOrderWithExcessRow, error) {
+	return r.dbQuery.GetOrderWithExcess(ctx, int32(limit))
+}
+

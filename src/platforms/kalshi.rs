@@ -18,7 +18,6 @@ pub struct MyKalshiClient {
     http_client: KalshiClient,
     ws_client: Arc<KalshiWebsocketClient>,
     qdrant_client: vector_store::VectorStore,
-    account: kalshi_rs::Account,
     ws_tx: mpsc::Sender<WsEventMessage>,
 }
 
@@ -38,10 +37,9 @@ impl MyKalshiClient {
             Some(RateLimiterConfig::default()),
         );
 
-        let kalshi_ws = KalshiWebsocketClient::new(account.clone());
+        let kalshi_ws = KalshiWebsocketClient::new(account);
 
         Self {
-            account,
             http_client: kalshi_http,
             ws_client: Arc::new(kalshi_ws),
             qdrant_client,

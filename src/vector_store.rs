@@ -42,16 +42,14 @@ pub struct VectorStore {
 }
 
 impl VectorStore {
-    pub async fn new_metal(
+    pub async fn new_auto(
         url: &str,
         collection_name: &'static str,
         tx: mpsc::Sender<protos::ClientEbo>,
     ) -> anyhow::Result<Self> {
-        let device =
-            candle_core::Device::new_metal(0).context("metal device initialization failed")?;
-
+        let device = candle_core::Device::metal_if_available(0).context("error using metal")?;
         let vs = Self::new(url, collection_name, device, tx).await?;
-        tracing::info!("succesfully setup vector store");
+        tracing::info!("successfully setup vector store");
         Ok(vs)
     }
 
@@ -282,7 +280,7 @@ impl VectorStore {
                     "{}:{}",
                     clone_anchor_market_info.uuid, clone_anchor_market_info.market_id
                 )),
-                found_at: chrono::Utc::now().timestamp_millis(),
+                action_at: chrono::Utc::now().timestamp_millis(),
                 action: Some(protos::client_ebo::Action::CrossPlatformHit(hit)),
             })
             .await
@@ -369,7 +367,7 @@ impl VectorStore {
                         "{}:{}",
                         clone_take_market_info.uuid, clone_take_market_info.market_id
                     )),
-                    found_at: chrono::Utc::now().timestamp_millis(),
+                    action_at: chrono::Utc::now().timestamp_millis(),
                     action: Some(protos::client_ebo::Action::CrossPlatformHit(hit)),
                 })
                 .await

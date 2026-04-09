@@ -97,3 +97,81 @@ RETURNING *;
 -- name: HardDeleteOldSimilarityHits :exec
 DELETE FROM similarity_hits
 WHERE is_deleted = TRUE AND deleted_at < $1;
+
+-- name: InsertOrder :exec
+INSERT INTO orders (
+    correlation_id, 
+    found_at, 
+    arbs, 
+    anchor_cost, 
+    match_cost, 
+    anchor_fill, 
+    match_fill, 
+    excess_fill, 
+    anchor_order_id, 
+    match_order_id
+) VALUES (
+    sqlc.arg('order_correlation_id'),
+    sqlc.arg('found_at'),
+    (SELECT arbs.arbs FROM arbs WHERE arbs.correlation_id = sqlc.arg('arb_correlation_id')),
+    sqlc.arg('anchor_cost'),
+    sqlc.arg('match_cost'),
+    sqlc.arg('anchor_fill'),
+    sqlc.arg('match_fill'),
+    sqlc.arg('excess_fill'),
+    sqlc.arg('anchor_order_id'),
+    sqlc.arg('match_order_id')
+);
+
+-- name: GetOrderByCorrelationID :one
+SELECT *
+FROM orders
+WHERE correlation_id = $1;
+
+-- name: GetAllOrders :many
+SELECT *
+FROM orders
+ORDER BY found_at DESC;
+
+-- name: InsertExcessFill :exec
+INSERT INTO excess_fill (
+    correlation_id,
+    found_at,
+    platform,
+    order_id,
+    fill_size,
+    fill_cost
+) VALUES (
+    $1, $2, $3, $4, $5, $6
+);
+
+-- name: GetExcessFillByCorrelationID :one
+SELECT *
+FROM excess_fill
+WHERE correlation_id = $1;
+
+-- name: GetAllExcessFills :many
+SELECT *
+FROM excess_fill
+ORDER BY found_at DESC;
+
+-- name: GetOrderWithExcess :many
+SELECT 
+    o.correlation_id,
+    o.found_at,
+    o.arbs,
+    o.anchor_cost,
+    o.match_cost,
+    o.anchor_fill,
+    o.match_fill,
+    o.excess_fill,
+    o.anchor_order_id,
+    o.match_order_id,
+    e.platform AS hedge_platform,
+    e.order_id AS hedge_order_id,
+    e.fill_size AS hedge_fill_size,
+    e.fill_cost AS hedge_fill_cost
+FROM orders o
+LEFT JOIN excess_fill e ON o.correlation_id = e.correlation_id
+ORDER BY o.found_at DESC
+LIMIT $1;

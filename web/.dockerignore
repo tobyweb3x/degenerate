@@ -1,0 +1,5 @@
+.gitignore
+.air.toml
+dist
+tmp
+view/node_modules

@@ -6,7 +6,7 @@ use qdrant_client::{Payload, qdrant};
 use once_cell::sync::Lazy;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromStr;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{collections::HashMap, fmt};
 use strum::IntoEnumIterator;
@@ -17,10 +17,6 @@ pub mod protos {
     tonic::include_proto!("opon_ifa");
 }
 
-pub mod constants {
-    pub const PLATFORM_POLYMARKET: &str = "POLYMARKET";
-    pub const PLATFORM_KALSHI: &str = "KALSHI";
-}
 
 impl fmt::Display for protos::Platform {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -423,12 +419,13 @@ impl MarketTag {
             (Self::Nfl, protos::Platform::Kalshi) => &["Football"],
 
             (Self::Politics, protos::Platform::Polymarket) => &[
-                "2", "596", "176", "789", "902", "100199", "144", "101206", "102788", "1597",
-                "102006", "1515", "264", "126", "103026", "102514", "102477", "230", "393",
-                "100434", "1396", "778", "828", "915", "859", "1346", "101773", "101426", "80",
-                "100783", "102810", "766", "514", "718", "1459", "1405", "1400", "247", "1337",
-                "282", "396", "538", "791", "100343", "100381", "100387", "100388",
+                "2", "80", "126", "144", "176", "230", "247", "264", "282", "393", "396", "514",
+                "538", "596", "718", "766", "778", "789", "791", "828", "859", "902", "915",
+                "1337", "1346", "1396", "1400", "1405", "1459", "1515", "1597", "100199", "100343",
+                "100381", "100387", "100388", "100434", "100783", "101206", "101426", "101773",
+                "102006", "102477", "102514", "102788", "102810", "103026",
             ],
+
             (Self::Politics, protos::Platform::Kalshi) => {
                 &["Politics", "Elections", "Companies", "Mentions"]
             }
@@ -567,22 +564,6 @@ impl fmt::Display for protos::MatchCandidate {
     }
 }
 
-pub fn de_str_to_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    s.parse::<f64>().map_err(serde::de::Error::custom)
-}
-
-pub fn de_str_to_i64<'de, D>(deserializer: D) -> Result<i64, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    s.parse::<i64>().map_err(serde::de::Error::custom)
-}
-
 pub fn parse_f32(s: &str) -> anyhow::Result<f32> {
     Ok(s.parse::<f32>().context("error parsing string to f32")?)
 }
@@ -620,13 +601,13 @@ pub struct ArbWatch {
 
 #[derive(Debug, Clone, Default)]
 pub struct TopOfBook {
+    pub sid: Option<i64>,
     pub best_bid: f32,
-    pub bid_size: f32,
     pub best_ask: f32,
+    pub bid_size: f32,
     pub ask_size: f32,
     pub spread: f32,
     pub tob_timestamp_ms: i64,
-    pub sid: Option<i64>,
 }
 
 impl TryFrom<protos::ArbEssentials> for ArbMinifiedInfo {
@@ -690,8 +671,6 @@ pub struct ExecutionRequest {
     pub correlation_id: CorrelationId,
     pub anchor: ArbMinifiedInfo,
     pub r#match: ArbMinifiedInfo,
-    pub anchor_price: f32,
-    pub match_price: f32,
 }
 
 pub fn str_to_decimal(value: &str) -> anyhow::Result<Decimal> {
@@ -707,4 +686,3 @@ pub fn opt_str_to_decimal_strict(value: &Option<String>) -> anyhow::Result<Decim
         .ok_or_else(|| anyhow::anyhow!("Expected value but got None"))
         .and_then(str_to_decimal)
 }
-

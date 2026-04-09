@@ -8,8 +8,11 @@ import (
 	"log"
 	"time"
 	"web/protos"
+	"web/service/repository/postgres"
 	frontend "web/view/pages"
 
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shopspring/decimal"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -108,7 +111,7 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.ClientEbo) (*protos.Se
 		return nil, a.db.InsertNewCrossHit(
 			ctx,
 			ebo.CorrelationId,
-			time.UnixMilli(ebo.FoundAt).UTC(),
+			time.UnixMilli(ebo.ActionAt).UTC(),
 			byteData,
 		)
 
@@ -127,7 +130,7 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.ClientEbo) (*protos.Se
 		return nil, a.db.InsertNewIntraHit(
 			ctx,
 			ebo.CorrelationId,
-			time.UnixMilli(ebo.FoundAt).UTC(),
+			time.UnixMilli(ebo.ActionAt).UTC(),
 			byteData,
 		)
 
@@ -146,7 +149,7 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.ClientEbo) (*protos.Se
 		return nil, a.db.InsertNewCrossArb(
 			ctx,
 			ebo.CorrelationId,
-			time.UnixMilli(ebo.FoundAt).UTC(),
+			time.UnixMilli(ebo.ActionAt).UTC(),
 			byteData,
 		)
 
@@ -165,7 +168,7 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.ClientEbo) (*protos.Se
 		return nil, a.db.InsertNewIntraArb(
 			ctx,
 			ebo.CorrelationId,
-			time.UnixMilli(ebo.FoundAt).UTC(),
+			time.UnixMilli(ebo.ActionAt).UTC(),
 			byteData,
 		)
 
@@ -199,7 +202,7 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.ClientEbo) (*protos.Se
 
 			return &protos.ServerEbo{
 				CorrelationId: "",
-				FoundAt:       0,
+				ActionAt:      0,
 				Action: &protos.ServerEbo_RunningArbsResponse{
 					RunningArbsResponse: &protos.Arbs{
 						CorrelationIds:  correlationIds,
@@ -217,14 +220,55 @@ func (a *App) ProcessEbo(ctx context.Context, ebo *protos.ClientEbo) (*protos.Se
 
 	case *protos.ClientEbo_DeleteRunningArbs:
 		req := p.DeleteRunningArbs
-
 		if req == nil {
 			return nil, errors.New("got nil from client")
 		}
 
 		for _, correlationID := range req.CorrelationIds {
-			a.db.DeleteArb(ctx, correlationID)
+			if err := a.db.DeleteArb(ctx, correlationID); err != nil {
+				log.Printf("error deleting arb %s\n", err.Error())
+			}
 		}
+
+	case *protos.ClientEbo_OrderSubmitted:
+		req := p.OrderSubmitted
+		if req == nil {
+			return nil, errors.New("got nil from client")
+		}
+
+		return nil, a.db.InsertNewOrder(ctx, postgres.InsertOrderParams{
+			OrderCorrelationID: ebo.CorrelationId,
+			FoundAt: pgtype.Timestamptz{
+				Time:  time.UnixMilli(ebo.ActionAt).UTC(),
+				Valid: true,
+			},
+			ArbCorrelationID: req.ArbCorrelationId,
+			AnchorCost:       decimal.NewFromFloat32(req.AnchorCost),
+			MatchCost:        decimal.NewFromFloat32(req.MatchCost),
+			AnchorFill:       decimal.NewFromFloat32(req.AnchorFill),
+			MatchFill:        decimal.NewFromFloat32(req.MatchFill),
+			ExcessFill:       decimal.NewFromFloat32(req.ExcessFill),
+			AnchorOrderID:    req.AnchorOrderId,
+			MatchOrderID:     req.MatchOrderId,
+		})
+
+	case *protos.ClientEbo_ExcessFillSubmitted:
+		req := p.ExcessFillSubmitted
+		if req == nil {
+			return nil, errors.New("got nil from client")
+		}
+
+		return nil, a.db.InsertNewExcessFill(ctx, postgres.InsertExcessFillParams{
+			CorrelationID: ebo.CorrelationId,
+			FoundAt: pgtype.Timestamptz{
+				Time:  time.UnixMilli(ebo.ActionAt).UTC(),
+				Valid: true,
+			},
+			Platform: req.Platform.String(),
+			OrderID:  req.OrderId,
+			FillSize: decimal.NewFromFloat32(req.ExcessFillSize),
+			FillCost: decimal.NewFromFloat32(req.ExcessFillCost),
+		})
 
 	case nil:
 		return nil, fmt.Errorf("received Ebo with empty payload")

@@ -108,12 +108,34 @@ message DeleteRunningArbRequest {
 
 
 // ------------------------------------------------
+// THE ORDER
+// ------------------------------------------------
+
+message OrderMade {
+    float anchor_cost = 1;
+    float match_cost = 2;
+    float anchor_fill = 3;
+    float match_fill = 4;
+    float excess_fill = 5;
+    string anchor_order_id = 6;
+    string match_order_id = 7;
+    string arb_correlation_id = 8;
+}
+
+message ExcessFillOrderMade {
+    string order_id = 1;
+    Platform platform = 2;
+    float excess_fill_size = 3;
+    float excess_fill_cost = 4;
+}
+
+// ------------------------------------------------
 // THE ENVELOPE
 // ------------------------------------------------
 
 message ClientEbo {
     string correlation_id = 1;
-    int64 found_at = 2;
+    int64 action_at = 2;
 
     oneof action {
         SimilarityHit cross_platform_hit = 3;
@@ -124,11 +146,14 @@ message ClientEbo {
 
         RunningArbsRequest get_running_arbs = 7;
         DeleteRunningArbRequest delete_running_arbs = 8;
+
+        OrderMade order_submitted = 9;
+        ExcessFillOrderMade excess_fill_submitted = 10;
     }
 }
 message ServerEbo {
     string correlation_id = 1;
-    int64 found_at = 2;
+    int64 action_at = 2;
 
     oneof action {
         DiscoveredArbList cross_platform_arb_discovery = 3;

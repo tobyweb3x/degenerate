@@ -840,10 +840,178 @@ func (x *DeleteRunningArbRequest) GetCorrelationIds() []string {
 	return nil
 }
 
+type OrderMade struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	AnchorCost       float32                `protobuf:"fixed32,1,opt,name=anchor_cost,json=anchorCost,proto3" json:"anchor_cost,omitempty"`
+	MatchCost        float32                `protobuf:"fixed32,2,opt,name=match_cost,json=matchCost,proto3" json:"match_cost,omitempty"`
+	AnchorFill       float32                `protobuf:"fixed32,3,opt,name=anchor_fill,json=anchorFill,proto3" json:"anchor_fill,omitempty"`
+	MatchFill        float32                `protobuf:"fixed32,4,opt,name=match_fill,json=matchFill,proto3" json:"match_fill,omitempty"`
+	ExcessFill       float32                `protobuf:"fixed32,5,opt,name=excess_fill,json=excessFill,proto3" json:"excess_fill,omitempty"`
+	AnchorOrderId    string                 `protobuf:"bytes,6,opt,name=anchor_order_id,json=anchorOrderId,proto3" json:"anchor_order_id,omitempty"`
+	MatchOrderId     string                 `protobuf:"bytes,7,opt,name=match_order_id,json=matchOrderId,proto3" json:"match_order_id,omitempty"`
+	ArbCorrelationId string                 `protobuf:"bytes,8,opt,name=arb_correlation_id,json=arbCorrelationId,proto3" json:"arb_correlation_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *OrderMade) Reset() {
+	*x = OrderMade{}
+	mi := &file_opon_ifa_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OrderMade) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OrderMade) ProtoMessage() {}
+
+func (x *OrderMade) ProtoReflect() protoreflect.Message {
+	mi := &file_opon_ifa_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OrderMade.ProtoReflect.Descriptor instead.
+func (*OrderMade) Descriptor() ([]byte, []int) {
+	return file_opon_ifa_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *OrderMade) GetAnchorCost() float32 {
+	if x != nil {
+		return x.AnchorCost
+	}
+	return 0
+}
+
+func (x *OrderMade) GetMatchCost() float32 {
+	if x != nil {
+		return x.MatchCost
+	}
+	return 0
+}
+
+func (x *OrderMade) GetAnchorFill() float32 {
+	if x != nil {
+		return x.AnchorFill
+	}
+	return 0
+}
+
+func (x *OrderMade) GetMatchFill() float32 {
+	if x != nil {
+		return x.MatchFill
+	}
+	return 0
+}
+
+func (x *OrderMade) GetExcessFill() float32 {
+	if x != nil {
+		return x.ExcessFill
+	}
+	return 0
+}
+
+func (x *OrderMade) GetAnchorOrderId() string {
+	if x != nil {
+		return x.AnchorOrderId
+	}
+	return ""
+}
+
+func (x *OrderMade) GetMatchOrderId() string {
+	if x != nil {
+		return x.MatchOrderId
+	}
+	return ""
+}
+
+func (x *OrderMade) GetArbCorrelationId() string {
+	if x != nil {
+		return x.ArbCorrelationId
+	}
+	return ""
+}
+
+type ExcessFillOrderMade struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	OrderId        string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	Platform       Platform               `protobuf:"varint,2,opt,name=platform,proto3,enum=opon_ifa.Platform" json:"platform,omitempty"`
+	ExcessFillSize float32                `protobuf:"fixed32,3,opt,name=excess_fill_size,json=excessFillSize,proto3" json:"excess_fill_size,omitempty"`
+	ExcessFillCost float32                `protobuf:"fixed32,4,opt,name=excess_fill_cost,json=excessFillCost,proto3" json:"excess_fill_cost,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ExcessFillOrderMade) Reset() {
+	*x = ExcessFillOrderMade{}
+	mi := &file_opon_ifa_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExcessFillOrderMade) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExcessFillOrderMade) ProtoMessage() {}
+
+func (x *ExcessFillOrderMade) ProtoReflect() protoreflect.Message {
+	mi := &file_opon_ifa_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExcessFillOrderMade.ProtoReflect.Descriptor instead.
+func (*ExcessFillOrderMade) Descriptor() ([]byte, []int) {
+	return file_opon_ifa_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ExcessFillOrderMade) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *ExcessFillOrderMade) GetPlatform() Platform {
+	if x != nil {
+		return x.Platform
+	}
+	return Platform_POLYMARKET
+}
+
+func (x *ExcessFillOrderMade) GetExcessFillSize() float32 {
+	if x != nil {
+		return x.ExcessFillSize
+	}
+	return 0
+}
+
+func (x *ExcessFillOrderMade) GetExcessFillCost() float32 {
+	if x != nil {
+		return x.ExcessFillCost
+	}
+	return 0
+}
+
 type ClientEbo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CorrelationId string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
-	FoundAt       int64                  `protobuf:"varint,2,opt,name=found_at,json=foundAt,proto3" json:"found_at,omitempty"`
+	ActionAt      int64                  `protobuf:"varint,2,opt,name=action_at,json=actionAt,proto3" json:"action_at,omitempty"`
 	// Types that are valid to be assigned to Action:
 	//
 	//	*ClientEbo_CrossPlatformHit
@@ -852,6 +1020,8 @@ type ClientEbo struct {
 	//	*ClientEbo_IntraPlatformArb
 	//	*ClientEbo_GetRunningArbs
 	//	*ClientEbo_DeleteRunningArbs
+	//	*ClientEbo_OrderSubmitted
+	//	*ClientEbo_ExcessFillSubmitted
 	Action        isClientEbo_Action `protobuf_oneof:"action"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -859,7 +1029,7 @@ type ClientEbo struct {
 
 func (x *ClientEbo) Reset() {
 	*x = ClientEbo{}
-	mi := &file_opon_ifa_proto_msgTypes[12]
+	mi := &file_opon_ifa_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -871,7 +1041,7 @@ func (x *ClientEbo) String() string {
 func (*ClientEbo) ProtoMessage() {}
 
 func (x *ClientEbo) ProtoReflect() protoreflect.Message {
-	mi := &file_opon_ifa_proto_msgTypes[12]
+	mi := &file_opon_ifa_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -884,7 +1054,7 @@ func (x *ClientEbo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientEbo.ProtoReflect.Descriptor instead.
 func (*ClientEbo) Descriptor() ([]byte, []int) {
-	return file_opon_ifa_proto_rawDescGZIP(), []int{12}
+	return file_opon_ifa_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ClientEbo) GetCorrelationId() string {
@@ -894,9 +1064,9 @@ func (x *ClientEbo) GetCorrelationId() string {
 	return ""
 }
 
-func (x *ClientEbo) GetFoundAt() int64 {
+func (x *ClientEbo) GetActionAt() int64 {
 	if x != nil {
-		return x.FoundAt
+		return x.ActionAt
 	}
 	return 0
 }
@@ -962,6 +1132,24 @@ func (x *ClientEbo) GetDeleteRunningArbs() *DeleteRunningArbRequest {
 	return nil
 }
 
+func (x *ClientEbo) GetOrderSubmitted() *OrderMade {
+	if x != nil {
+		if x, ok := x.Action.(*ClientEbo_OrderSubmitted); ok {
+			return x.OrderSubmitted
+		}
+	}
+	return nil
+}
+
+func (x *ClientEbo) GetExcessFillSubmitted() *ExcessFillOrderMade {
+	if x != nil {
+		if x, ok := x.Action.(*ClientEbo_ExcessFillSubmitted); ok {
+			return x.ExcessFillSubmitted
+		}
+	}
+	return nil
+}
+
 type isClientEbo_Action interface {
 	isClientEbo_Action()
 }
@@ -990,6 +1178,14 @@ type ClientEbo_DeleteRunningArbs struct {
 	DeleteRunningArbs *DeleteRunningArbRequest `protobuf:"bytes,8,opt,name=delete_running_arbs,json=deleteRunningArbs,proto3,oneof"`
 }
 
+type ClientEbo_OrderSubmitted struct {
+	OrderSubmitted *OrderMade `protobuf:"bytes,9,opt,name=order_submitted,json=orderSubmitted,proto3,oneof"`
+}
+
+type ClientEbo_ExcessFillSubmitted struct {
+	ExcessFillSubmitted *ExcessFillOrderMade `protobuf:"bytes,10,opt,name=excess_fill_submitted,json=excessFillSubmitted,proto3,oneof"`
+}
+
 func (*ClientEbo_CrossPlatformHit) isClientEbo_Action() {}
 
 func (*ClientEbo_IntraPlatformHit) isClientEbo_Action() {}
@@ -1002,10 +1198,14 @@ func (*ClientEbo_GetRunningArbs) isClientEbo_Action() {}
 
 func (*ClientEbo_DeleteRunningArbs) isClientEbo_Action() {}
 
+func (*ClientEbo_OrderSubmitted) isClientEbo_Action() {}
+
+func (*ClientEbo_ExcessFillSubmitted) isClientEbo_Action() {}
+
 type ServerEbo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CorrelationId string                 `protobuf:"bytes,1,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
-	FoundAt       int64                  `protobuf:"varint,2,opt,name=found_at,json=foundAt,proto3" json:"found_at,omitempty"`
+	ActionAt      int64                  `protobuf:"varint,2,opt,name=action_at,json=actionAt,proto3" json:"action_at,omitempty"`
 	// Types that are valid to be assigned to Action:
 	//
 	//	*ServerEbo_CrossPlatformArbDiscovery
@@ -1020,7 +1220,7 @@ type ServerEbo struct {
 
 func (x *ServerEbo) Reset() {
 	*x = ServerEbo{}
-	mi := &file_opon_ifa_proto_msgTypes[13]
+	mi := &file_opon_ifa_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1032,7 +1232,7 @@ func (x *ServerEbo) String() string {
 func (*ServerEbo) ProtoMessage() {}
 
 func (x *ServerEbo) ProtoReflect() protoreflect.Message {
-	mi := &file_opon_ifa_proto_msgTypes[13]
+	mi := &file_opon_ifa_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1045,7 +1245,7 @@ func (x *ServerEbo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerEbo.ProtoReflect.Descriptor instead.
 func (*ServerEbo) Descriptor() ([]byte, []int) {
-	return file_opon_ifa_proto_rawDescGZIP(), []int{13}
+	return file_opon_ifa_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ServerEbo) GetCorrelationId() string {
@@ -1055,9 +1255,9 @@ func (x *ServerEbo) GetCorrelationId() string {
 	return ""
 }
 
-func (x *ServerEbo) GetFoundAt() int64 {
+func (x *ServerEbo) GetActionAt() int64 {
 	if x != nil {
-		return x.FoundAt
+		return x.ActionAt
 	}
 	return 0
 }
@@ -1200,20 +1400,42 @@ const file_opon_ifa_proto_rawDesc = "" +
 	"\x12RunningArbsRequest\x12,\n" +
 	"\barb_type\x18\x01 \x01(\x0e2\x11.opon_ifa.ArbTypeR\aarbType\"B\n" +
 	"\x17DeleteRunningArbRequest\x12'\n" +
-	"\x0fcorrelation_ids\x18\x01 \x03(\tR\x0ecorrelationIds\"\x86\x04\n" +
+	"\x0fcorrelation_ids\x18\x01 \x03(\tR\x0ecorrelationIds\"\xa8\x02\n" +
+	"\tOrderMade\x12\x1f\n" +
+	"\vanchor_cost\x18\x01 \x01(\x02R\n" +
+	"anchorCost\x12\x1d\n" +
+	"\n" +
+	"match_cost\x18\x02 \x01(\x02R\tmatchCost\x12\x1f\n" +
+	"\vanchor_fill\x18\x03 \x01(\x02R\n" +
+	"anchorFill\x12\x1d\n" +
+	"\n" +
+	"match_fill\x18\x04 \x01(\x02R\tmatchFill\x12\x1f\n" +
+	"\vexcess_fill\x18\x05 \x01(\x02R\n" +
+	"excessFill\x12&\n" +
+	"\x0fanchor_order_id\x18\x06 \x01(\tR\ranchorOrderId\x12$\n" +
+	"\x0ematch_order_id\x18\a \x01(\tR\fmatchOrderId\x12,\n" +
+	"\x12arb_correlation_id\x18\b \x01(\tR\x10arbCorrelationId\"\xb4\x01\n" +
+	"\x13ExcessFillOrderMade\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12.\n" +
+	"\bplatform\x18\x02 \x01(\x0e2\x12.opon_ifa.PlatformR\bplatform\x12(\n" +
+	"\x10excess_fill_size\x18\x03 \x01(\x02R\x0eexcessFillSize\x12(\n" +
+	"\x10excess_fill_cost\x18\x04 \x01(\x02R\x0eexcessFillCost\"\x9d\x05\n" +
 	"\tClientEbo\x12%\n" +
-	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x19\n" +
-	"\bfound_at\x18\x02 \x01(\x03R\afoundAt\x12G\n" +
+	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x1b\n" +
+	"\taction_at\x18\x02 \x01(\x03R\bactionAt\x12G\n" +
 	"\x12cross_platform_hit\x18\x03 \x01(\v2\x17.opon_ifa.SimilarityHitH\x00R\x10crossPlatformHit\x12G\n" +
 	"\x12intra_platform_hit\x18\x04 \x01(\v2\x17.opon_ifa.SimilarityHitH\x00R\x10intraPlatformHit\x12=\n" +
 	"\x12cross_platform_arb\x18\x05 \x01(\v2\r.opon_ifa.ArbH\x00R\x10crossPlatformArb\x12=\n" +
 	"\x12intra_platform_arb\x18\x06 \x01(\v2\r.opon_ifa.ArbH\x00R\x10intraPlatformArb\x12H\n" +
 	"\x10get_running_arbs\x18\a \x01(\v2\x1c.opon_ifa.RunningArbsRequestH\x00R\x0egetRunningArbs\x12S\n" +
-	"\x13delete_running_arbs\x18\b \x01(\v2!.opon_ifa.DeleteRunningArbRequestH\x00R\x11deleteRunningArbsB\b\n" +
-	"\x06action\"\xef\x03\n" +
+	"\x13delete_running_arbs\x18\b \x01(\v2!.opon_ifa.DeleteRunningArbRequestH\x00R\x11deleteRunningArbs\x12>\n" +
+	"\x0forder_submitted\x18\t \x01(\v2\x13.opon_ifa.OrderMadeH\x00R\x0eorderSubmitted\x12S\n" +
+	"\x15excess_fill_submitted\x18\n" +
+	" \x01(\v2\x1d.opon_ifa.ExcessFillOrderMadeH\x00R\x13excessFillSubmittedB\b\n" +
+	"\x06action\"\xf1\x03\n" +
 	"\tServerEbo\x12%\n" +
-	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x19\n" +
-	"\bfound_at\x18\x02 \x01(\x03R\afoundAt\x12^\n" +
+	"\x0ecorrelation_id\x18\x01 \x01(\tR\rcorrelationId\x12\x1b\n" +
+	"\taction_at\x18\x02 \x01(\x03R\bactionAt\x12^\n" +
 	"\x1ccross_platform_arb_discovery\x18\x03 \x01(\v2\x1b.opon_ifa.DiscoveredArbListH\x00R\x19crossPlatformArbDiscovery\x12^\n" +
 	"\x1cintra_platform_arb_discovery\x18\x04 \x01(\v2\x1b.opon_ifa.DiscoveredArbListH\x00R\x19intraPlatformArbDiscovery\x12;\n" +
 	"\x11confirmed_and_run\x18\x05 \x01(\v2\r.opon_ifa.ArbH\x00R\x0fconfirmedAndRun\x12D\n" +
@@ -1247,7 +1469,7 @@ func file_opon_ifa_proto_rawDescGZIP() []byte {
 }
 
 var file_opon_ifa_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_opon_ifa_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_opon_ifa_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_opon_ifa_proto_goTypes = []any{
 	(Platform)(0),                   // 0: opon_ifa.Platform
 	(Leg)(0),                        // 1: opon_ifa.Leg
@@ -1264,8 +1486,10 @@ var file_opon_ifa_proto_goTypes = []any{
 	(*Arbs)(nil),                    // 12: opon_ifa.Arbs
 	(*RunningArbsRequest)(nil),      // 13: opon_ifa.RunningArbsRequest
 	(*DeleteRunningArbRequest)(nil), // 14: opon_ifa.DeleteRunningArbRequest
-	(*ClientEbo)(nil),               // 15: opon_ifa.ClientEbo
-	(*ServerEbo)(nil),               // 16: opon_ifa.ServerEbo
+	(*OrderMade)(nil),               // 15: opon_ifa.OrderMade
+	(*ExcessFillOrderMade)(nil),     // 16: opon_ifa.ExcessFillOrderMade
+	(*ClientEbo)(nil),               // 17: opon_ifa.ClientEbo
+	(*ServerEbo)(nil),               // 18: opon_ifa.ServerEbo
 }
 var file_opon_ifa_proto_depIdxs = []int32{
 	0,  // 0: opon_ifa.MarketInfo.platform:type_name -> opon_ifa.Platform
@@ -1283,24 +1507,27 @@ var file_opon_ifa_proto_depIdxs = []int32{
 	10, // 12: opon_ifa.Arb.match:type_name -> opon_ifa.ArbEssentials
 	11, // 13: opon_ifa.Arbs.confirmed_and_run:type_name -> opon_ifa.Arb
 	2,  // 14: opon_ifa.RunningArbsRequest.arb_type:type_name -> opon_ifa.ArbType
-	6,  // 15: opon_ifa.ClientEbo.cross_platform_hit:type_name -> opon_ifa.SimilarityHit
-	6,  // 16: opon_ifa.ClientEbo.intra_platform_hit:type_name -> opon_ifa.SimilarityHit
-	11, // 17: opon_ifa.ClientEbo.cross_platform_arb:type_name -> opon_ifa.Arb
-	11, // 18: opon_ifa.ClientEbo.intra_platform_arb:type_name -> opon_ifa.Arb
-	13, // 19: opon_ifa.ClientEbo.get_running_arbs:type_name -> opon_ifa.RunningArbsRequest
-	14, // 20: opon_ifa.ClientEbo.delete_running_arbs:type_name -> opon_ifa.DeleteRunningArbRequest
-	9,  // 21: opon_ifa.ServerEbo.cross_platform_arb_discovery:type_name -> opon_ifa.DiscoveredArbList
-	9,  // 22: opon_ifa.ServerEbo.intra_platform_arb_discovery:type_name -> opon_ifa.DiscoveredArbList
-	11, // 23: opon_ifa.ServerEbo.confirmed_and_run:type_name -> opon_ifa.Arb
-	12, // 24: opon_ifa.ServerEbo.running_arbs_response:type_name -> opon_ifa.Arbs
-	14, // 25: opon_ifa.ServerEbo.delete_running_arbs:type_name -> opon_ifa.DeleteRunningArbRequest
-	15, // 26: opon_ifa.EsuOdara.Esu:input_type -> opon_ifa.ClientEbo
-	16, // 27: opon_ifa.EsuOdara.Esu:output_type -> opon_ifa.ServerEbo
-	27, // [27:28] is the sub-list for method output_type
-	26, // [26:27] is the sub-list for method input_type
-	26, // [26:26] is the sub-list for extension type_name
-	26, // [26:26] is the sub-list for extension extendee
-	0,  // [0:26] is the sub-list for field type_name
+	0,  // 15: opon_ifa.ExcessFillOrderMade.platform:type_name -> opon_ifa.Platform
+	6,  // 16: opon_ifa.ClientEbo.cross_platform_hit:type_name -> opon_ifa.SimilarityHit
+	6,  // 17: opon_ifa.ClientEbo.intra_platform_hit:type_name -> opon_ifa.SimilarityHit
+	11, // 18: opon_ifa.ClientEbo.cross_platform_arb:type_name -> opon_ifa.Arb
+	11, // 19: opon_ifa.ClientEbo.intra_platform_arb:type_name -> opon_ifa.Arb
+	13, // 20: opon_ifa.ClientEbo.get_running_arbs:type_name -> opon_ifa.RunningArbsRequest
+	14, // 21: opon_ifa.ClientEbo.delete_running_arbs:type_name -> opon_ifa.DeleteRunningArbRequest
+	15, // 22: opon_ifa.ClientEbo.order_submitted:type_name -> opon_ifa.OrderMade
+	16, // 23: opon_ifa.ClientEbo.excess_fill_submitted:type_name -> opon_ifa.ExcessFillOrderMade
+	9,  // 24: opon_ifa.ServerEbo.cross_platform_arb_discovery:type_name -> opon_ifa.DiscoveredArbList
+	9,  // 25: opon_ifa.ServerEbo.intra_platform_arb_discovery:type_name -> opon_ifa.DiscoveredArbList
+	11, // 26: opon_ifa.ServerEbo.confirmed_and_run:type_name -> opon_ifa.Arb
+	12, // 27: opon_ifa.ServerEbo.running_arbs_response:type_name -> opon_ifa.Arbs
+	14, // 28: opon_ifa.ServerEbo.delete_running_arbs:type_name -> opon_ifa.DeleteRunningArbRequest
+	17, // 29: opon_ifa.EsuOdara.Esu:input_type -> opon_ifa.ClientEbo
+	18, // 30: opon_ifa.EsuOdara.Esu:output_type -> opon_ifa.ServerEbo
+	30, // [30:31] is the sub-list for method output_type
+	29, // [29:30] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_opon_ifa_proto_init() }
@@ -1308,15 +1535,17 @@ func file_opon_ifa_proto_init() {
 	if File_opon_ifa_proto != nil {
 		return
 	}
-	file_opon_ifa_proto_msgTypes[12].OneofWrappers = []any{
+	file_opon_ifa_proto_msgTypes[14].OneofWrappers = []any{
 		(*ClientEbo_CrossPlatformHit)(nil),
 		(*ClientEbo_IntraPlatformHit)(nil),
 		(*ClientEbo_CrossPlatformArb)(nil),
 		(*ClientEbo_IntraPlatformArb)(nil),
 		(*ClientEbo_GetRunningArbs)(nil),
 		(*ClientEbo_DeleteRunningArbs)(nil),
+		(*ClientEbo_OrderSubmitted)(nil),
+		(*ClientEbo_ExcessFillSubmitted)(nil),
 	}
-	file_opon_ifa_proto_msgTypes[13].OneofWrappers = []any{
+	file_opon_ifa_proto_msgTypes[15].OneofWrappers = []any{
 		(*ServerEbo_CrossPlatformArbDiscovery)(nil),
 		(*ServerEbo_IntraPlatformArbDiscovery)(nil),
 		(*ServerEbo_ConfirmedAndRun)(nil),
@@ -1329,7 +1558,7 @@ func file_opon_ifa_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_opon_ifa_proto_rawDesc), len(file_opon_ifa_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   14,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

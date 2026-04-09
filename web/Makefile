@@ -5,8 +5,17 @@ run:
 tailwind:
 	@$(MAKE) -C view tailwind
 
+minify:
+	@$(MAKE) -C view minify
+
 sqlc:
 	@$(MAKE) -C service/repository sqlc
 
+templ:
+	@$(MAKE) -C view generate
+
 proto-go:
 	@$(MAKE) -C ../ proto-go
+
+go-vendor:
+	@go mod vendor

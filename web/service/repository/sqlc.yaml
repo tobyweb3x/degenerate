@@ -9,4 +9,8 @@ sql:
         out: "postgres"
         sql_package: "pgx/v5"
         emit_json_tags: true
-      
+        overrides:
+          - db_type: "pg_catalog.numeric"
+            go_type:
+              import: "github.com/shopspring/decimal"
+              type: "Decimal"

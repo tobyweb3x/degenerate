@@ -2,6 +2,7 @@ package backend
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
@@ -9,8 +10,8 @@ import (
 
 type EnvConfig struct {
 	Database struct {
-		ProdPrivate string `env:"DATABASE_URL_PROD_PRIVATE"`
 		ProdPublic  string `env:"DATABASE_URL_PROD_PUBLIC"`
+		ProdPrivate string `env:"DATABASE_URL_PROD_PRIVATE"`
 		Dev         string `env:"DATABASE_URL_DEV"`
 	}
 
@@ -26,8 +27,11 @@ type EnvConfig struct {
 
 func LoadEnv(cfg *EnvConfig) error {
 
-	if err := godotenv.Load(".env"); err != nil {
-		fmt.Printf("error loading .env file: %v", err)
+	if os.Getenv("DOCKER_ENV") == "" {
+		if err := godotenv.Load(".env"); err != nil {
+			return fmt.Errorf("error loading .env file: %s", err.Error())
+		}
+
 	}
 
 	return env.Parse(cfg)

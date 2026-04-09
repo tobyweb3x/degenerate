@@ -6,6 +6,7 @@ package postgres
 
 import (
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shopspring/decimal"
 )
 
 type Arb struct {
@@ -16,6 +17,31 @@ type Arb struct {
 	Confirmed     bool               `json:"confirmed"`
 	Running       bool               `json:"running"`
 	ArbType       string             `json:"arb_type"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type ExcessFill struct {
+	ID            int64              `json:"id"`
+	CorrelationID string             `json:"correlation_id"`
+	FoundAt       pgtype.Timestamptz `json:"found_at"`
+	Platform      string             `json:"platform"`
+	OrderID       string             `json:"order_id"`
+	FillSize      decimal.Decimal    `json:"fill_size"`
+	FillCost      decimal.Decimal    `json:"fill_cost"`
+}
+
+type Order struct {
+	ID            int64              `json:"id"`
+	CorrelationID string             `json:"correlation_id"`
+	FoundAt       pgtype.Timestamptz `json:"found_at"`
+	Arbs          []byte             `json:"arbs"`
+	AnchorCost    decimal.Decimal    `json:"anchor_cost"`
+	MatchCost     decimal.Decimal    `json:"match_cost"`
+	AnchorFill    decimal.Decimal    `json:"anchor_fill"`
+	MatchFill     decimal.Decimal    `json:"match_fill"`
+	ExcessFill    decimal.Decimal    `json:"excess_fill"`
+	AnchorOrderID string             `json:"anchor_order_id"`
+	MatchOrderID  string             `json:"match_order_id"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 

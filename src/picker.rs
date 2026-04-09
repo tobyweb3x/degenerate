@@ -5,9 +5,7 @@ pub mod comms {
     };
     use anyhow::{self, Context};
     use chrono::{DateTime, Duration, Utc};
-    use kalshi_rs::{
-        portfolio::models::CreateOrderRequest, websocket::models::KalshiSocketMessage,
-    };
+    use kalshi_rs::websocket::models::KalshiSocketMessage;
     use polymarket_hft::client::polymarket::clob;
     use std::collections::HashSet;
     use tokio::sync::mpsc;
@@ -212,25 +210,35 @@ pub mod comms {
             for (platform, token_id) in entries {
                 match platform {
                     protos::Platform::Polymarket => {
-                        self.platforms
+                        if let Err(e) = self
+                            .platforms
                             .polymarket()
                             .ws_client()
                             .subscribe_market(vec![token_id.clone()], true)
                             .await
-                            .context(
-                                "error subscribing polymarket token_id to ws market channel",
-                            )?;
-                        tracing::info!("succesfully subscribe for {} on Polymarket", token_id,)
+                        {
+                            tracing::error!(
+                                "error subscribing polymarket token_id to ws market channel: {e}"
+                            );
+                            continue;
+                        };
+                        tracing::info!("succesfully subscribe for {token_id} on Polymarket")
                     }
 
                     protos::Platform::Kalshi => {
-                        self.platforms
+                        if let Err(e) = self
+                            .platforms
                             .kalshi()
                             .ws_client()
                             .subscribe(vec!["ticker"], vec![token_id.as_str()])
                             .await
-                            .context("error subscribing kalshi ticker to ws market channel")?;
-                        tracing::info!("succesfully subscribe for {} on kalshi", token_id,)
+                        {
+                            tracing::error!(
+                                "error subscribing kalshi ticker to ws market channel: {e}"
+                            );
+                            continue;
+                        }
+                        tracing::info!("succesfully subscribe for {token_id} on kalshi")
                     }
                 }
             }
@@ -277,7 +285,7 @@ pub mod comms {
                             &arb.anchor.as_ref().unwrap().token_id,
                             &arb.r#match.as_ref().unwrap().token_id
                         )),
-                        found_at: chrono::Utc::now().timestamp_millis(),
+                        action_at: chrono::Utc::now().timestamp_millis(),
                         action: Some(protos::client_ebo::Action::CrossPlatformArb(arb)),
                     })
                     .await
@@ -641,8 +649,6 @@ pub mod comms {
                         correlation_id: cid.clone(),
                         anchor: watch.arb.anchor.clone(),
                         r#match: watch.arb.r#match.clone(),
-                        anchor_price: anchor_best_ask,
-                        match_price: match_best_ask,
                     }) {
                         tracing::error!("error sending to picker_execution: {e:#?}");
                     }
@@ -674,39 +680,41 @@ pub mod exec {
     use kalshi_rs::portfolio::models::CreateOrderRequest;
     use polymarket_client_sdk::{
         auth::{Normal, state::Authenticated},
-        clob,
+        clob::{self},
     };
     use rust_decimal::prelude::FromStr;
     use rust_decimal::{Decimal, prelude::ToPrimitive};
-    use std::collections::HashMap;
+    // use std::collections::HashMap;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
     use tracing;
+    use uuid::Uuid;
 
-    #[derive(Debug, Clone)]
-    pub enum ExecStatus {
-        Pending,
-        FilledMatched, // Both legs filled the exact same amount
-        LeggedHedging, // Mismatched fills, currently placing a sell order for the excess
-        Hedged,        // Excess was successfully placed on the order book
-        Failed,        // Something went wrong
-    }
+    // #[derive(Debug, Clone)]
+    // pub enum ExecStatus {
+    //     Pending,
+    //     FilledMatched, // Both legs filled the exact same amount
+    //     LeggedHedging, // Mismatched fills, currently placing a sell order for the excess
+    //     Hedged,        // Excess was successfully placed on the order book
+    //     Failed,        // Something went wrong
+    // }
 
-    #[derive(Debug, Clone)]
-    pub struct ArbTradeRecord {
-        pub req: models::ExecutionRequest,
-        pub target_size: u64,
-        pub anchor_filled: u64,
-        pub match_filled: u64,
-        pub status: ExecStatus,
-    }
+    // #[derive(Debug, Clone)]
+    // pub struct ArbTradeRecord {
+    //     pub req: models::ExecutionRequest,
+    //     pub target_size: u64,
+    //     pub anchor_filled: u64,
+    //     pub match_filled: u64,
+    //     pub status: ExecStatus,
+    // }
 
     pub struct PickerExec {
         platforms: platforms::Platfroms,
         execution_rx: mpsc::Receiver<models::ExecutionRequest>,
         polymarket_clob_client: clob::Client<Authenticated<Normal>>,
-        trade_state: HashMap<models::CorrelationId, ArbTradeRecord>,
+        // trade_state: HashMap<models::CorrelationId, ArbTradeRecord>,
         poly_signer: PrivateKeySigner,
+        tx: mpsc::Sender<protos::ClientEbo>,
     }
 
     impl PickerExec {
@@ -715,13 +723,15 @@ pub mod exec {
             execution_rx: mpsc::Receiver<models::ExecutionRequest>,
             polymarket_clob_client: clob::Client<Authenticated<Normal>>,
             poly_signer: PrivateKeySigner,
+            tx: mpsc::Sender<protos::ClientEbo>,
         ) -> Self {
             Self {
                 platforms,
                 execution_rx,
-                trade_state: HashMap::with_capacity(512),
+                // trade_state: HashMap::with_capacity(512),
                 polymarket_clob_client,
                 poly_signer,
+                tx,
             }
         }
 
@@ -803,7 +813,14 @@ pub mod exec {
                 req.correlation_id,
             );
 
-            let (anchor_filled, match_filled) = {
+            let (
+                anchor_filled,
+                match_filled,
+                _anchor_remaining,
+                _match_remaining,
+                anchor_order_id,
+                match_order_id,
+            ) = {
                 let anchor_order = self.make_fak_order(
                     &req.anchor,
                     execution_size,
@@ -820,23 +837,30 @@ pub mod exec {
 
                 let (anchor_res, match_res) = tokio::join!(anchor_order, match_order);
 
-                let anchor_filled = match &anchor_res {
-                    Ok((filled, _)) => *filled,
+                let (anchor_filled, anchor_remaining, anchor_order_id) = match &anchor_res {
+                    Ok(res) => res.clone(),
                     Err(e) => {
-                        tracing::error!("🚨 Anchor Order Failed: {:?}", e);
-                        Decimal::ZERO
+                        tracing::error!("Anchor Order Failed: {:?}", e);
+                        (Decimal::ZERO, Decimal::ZERO, "".to_string())
                     }
                 };
 
-                let match_filled = match &match_res {
-                    Ok((filled, _)) => *filled,
+                let (match_filled, match_remaining, match_order_id) = match &match_res {
+                    Ok(res) => res.clone(),
                     Err(e) => {
-                        tracing::error!("🚨 Match Order Failed: {:?}", e);
-                        Decimal::ZERO
+                        tracing::error!("Match Order Failed: {:?}", e);
+                        (Decimal::ZERO, Decimal::ZERO, "".to_string())
                     }
                 };
 
-                (anchor_filled, match_filled)
+                (
+                    anchor_filled,
+                    match_filled,
+                    anchor_remaining,
+                    match_remaining,
+                    anchor_order_id,
+                    match_order_id,
+                )
             };
 
             tracing::info!(
@@ -847,40 +871,428 @@ pub mod exec {
             );
 
             if anchor_filled == match_filled {
-                if anchor_filled > Decimal::ZERO {
-                    tracing::info!(
-                        "🎉 PERFECT ARB! Both sides filled exactly {}.",
-                        anchor_filled
-                    );
-                } else {
-                    tracing::warn!("💨 Missed completely. Both sides filled 0.");
+                if anchor_filled == Decimal::ZERO {
+                    anyhow::bail!("Missed completely. Both sides filled 0.");
                 }
-                return Ok(());
+
+                tracing::info!("PERFECT ARB! Both sides filled exactly {}.", anchor_filled);
+                return self
+                    .tx
+                    .send(protos::ClientEbo {
+                        correlation_id: Uuid::new_v4().to_string(),
+                        action_at: chrono::Utc::now().timestamp_millis(),
+                        action: Some(protos::client_ebo::Action::OrderSubmitted(
+                            protos::OrderMade {
+                                anchor_cost: anchor_price.to_f32().unwrap(),
+                                match_cost: match_price.to_f32().unwrap(),
+                                anchor_fill: anchor_filled.to_f32().unwrap(),
+                                match_fill: match_filled.to_f32().unwrap(),
+                                anchor_order_id: anchor_order_id,
+                                match_order_id: match_order_id,
+                                arb_correlation_id: req.correlation_id,
+                                ..Default::default()
+                            },
+                        )),
+                    })
+                    .await
+                    .context("rror sending msg to gprc: ebo::OrderSubmitted");
             }
 
             let excess = anchor_filled - match_filled;
+            let correlation_id = uuid::Uuid::new_v4().to_string();
+
+            tracing::info!("there was excess of {excess}");
 
             if excess > Decimal::ZERO {
-                tracing::warn!("🚨 LEGGED: Anchor excess of {excess}. Initiating Hedge Sell.");
+                tracing::warn!("LEGGED: Anchor excess of {excess}. Initiating Hedge Sell.");
 
-                // add 50 cents to buy price
-                let hedge_price = anchor_price + Decimal::new(2, 2); // anchor_price + 0.02
+                let send_order_task = async {
+                    if let Err(e) = self
+                        .tx
+                        .send(protos::ClientEbo {
+                            correlation_id: correlation_id.clone(),
+                            action_at: chrono::Utc::now().timestamp_millis(),
+                            action: Some(protos::client_ebo::Action::OrderSubmitted(
+                                protos::OrderMade {
+                                    anchor_cost: anchor_price.to_f32().unwrap_or(0.0),
+                                    match_cost: match_price.to_f32().unwrap_or(0.0),
+                                    anchor_fill: anchor_filled.to_f32().unwrap_or(0.0),
+                                    match_fill: match_filled.to_f32().unwrap_or(0.0),
+                                    anchor_order_id: anchor_order_id.clone(),
+                                    match_order_id: match_order_id.clone(),
+                                    arb_correlation_id: req.correlation_id.clone(),
+                                    excess_fill: excess.to_f32().unwrap_or(0.0),
+                                },
+                            )),
+                        })
+                        .await
+                    {
+                        tracing::error!("Failed to send OrderSubmitted to gRPC: {e}");
+                    }
+                };
 
-                self.hedge_sell_order(&req.anchor, excess, hedge_price)
-                    .await
-                    .context("anchor hedge_sell_order failed")?;
+                let hedge_task = async {
+                    let hedge_price = anchor_price + Decimal::new(2, 2); // match_price + 0.02
+
+                    match self
+                        .hedge_sell_order(&req.anchor, excess, hedge_price)
+                        .await
+                    {
+                        Ok(result) => {
+                            if let Err(e) = self
+                                .tx
+                                .send(protos::ClientEbo {
+                                    correlation_id: correlation_id.clone(),
+                                    action_at: chrono::Utc::now().timestamp_millis(),
+                                    action: Some(protos::client_ebo::Action::ExcessFillSubmitted(
+                                        protos::ExcessFillOrderMade {
+                                            order_id: result.0,
+                                            platform: result.1 as i32,
+                                            excess_fill_size: result.2.to_f32().unwrap_or(0.0),
+                                            excess_fill_cost: result.3.to_f32().unwrap_or(0.0),
+                                        },
+                                    )),
+                                })
+                                .await
+                            {
+                                // backup log: sqllite3 db
+                                tracing::error!("Failed to send ExcessFillSubmitted to gRPC: {e}");
+                            }
+                        }
+                        Err(e) => {
+                            // backup log: sqllite3 db
+                            tracing::error!(
+                                "Anchor hedge_sell_order failed: {e} for correlation_id {correlation_id}"
+                            );
+                        }
+                    }
+                };
+
+                tokio::join!(send_order_task, hedge_task);
             } else if excess < Decimal::ZERO {
-                let excess_abs = excess.abs();
-                tracing::warn!("🚨 LEGGED: Match excess of {excess_abs}. Initiating Hedge Sell.");
-
                 let hedge_price = match_price + Decimal::new(2, 2); // match_price + 0.02
 
-                self.hedge_sell_order(&req.r#match, excess_abs, hedge_price)
-                    .await
-                    .context("match hedge_sell_order failed")?;
+                let excess_abs = excess.abs();
+                tracing::warn!("LEGGED: Match excess of {excess_abs}. Initiating Hedge Sell.");
+
+                let send_order_task = async {
+                    if let Err(e) = self
+                        .tx
+                        .send(protos::ClientEbo {
+                            correlation_id: correlation_id.clone(),
+                            action_at: chrono::Utc::now().timestamp_millis(),
+                            action: Some(protos::client_ebo::Action::OrderSubmitted(
+                                protos::OrderMade {
+                                    anchor_cost: anchor_price.to_f32().unwrap_or(0.0),
+                                    match_cost: match_price.to_f32().unwrap_or(0.0),
+                                    anchor_fill: anchor_filled.to_f32().unwrap_or(0.0),
+                                    match_fill: match_filled.to_f32().unwrap_or(0.0),
+                                    anchor_order_id: anchor_order_id.clone(),
+                                    match_order_id: match_order_id.clone(),
+                                    excess_fill: excess_abs.to_f32().unwrap_or(0.0),
+                                    arb_correlation_id: req.correlation_id.clone(),
+                                },
+                            )),
+                        })
+                        .await
+                    {
+                        tracing::error!("Failed to send OrderSubmitted to gRPC: {e}");
+                    }
+                };
+
+                let hedge_task = async {
+                    match self
+                        .hedge_sell_order(&req.r#match, excess_abs, hedge_price)
+                        .await
+                    {
+                        Ok(result) => {
+                            if let Err(e) = self
+                                .tx
+                                .send(protos::ClientEbo {
+                                    correlation_id: correlation_id.clone(),
+                                    action_at: chrono::Utc::now().timestamp_millis(),
+                                    action: Some(protos::client_ebo::Action::ExcessFillSubmitted(
+                                        protos::ExcessFillOrderMade {
+                                            order_id: result.0,
+                                            platform: result.1 as i32,
+                                            excess_fill_size: result.2.to_f32().unwrap_or(0.0),
+                                            excess_fill_cost: result.3.to_f32().unwrap_or(0.0),
+                                        },
+                                    )),
+                                })
+                                .await
+                            {
+                                // backup log: sqllite3 db
+                                tracing::error!("Failed to send ExcessFillSubmitted to gRPC: {e}");
+                            }
+                        }
+                        Err(e) => {
+                            // backup log: sqllite3 db
+                            tracing::error!("Match hedge_sell_order failed: {e}");
+                        }
+                    }
+                };
+
+                tokio::join!(send_order_task, hedge_task);
             }
 
             Ok(())
+        }
+
+        async fn make_fak_order(
+            &self,
+            leg: &models::ArbMinifiedInfo,
+            size: Decimal,
+            limit_price: Decimal,
+            correlation_id: &models::CorrelationId,
+        ) -> anyhow::Result<(Decimal, Decimal, String)> {
+            tracing::info!(
+                "making hedge_sell/-order: size: {size}, limit_price: {limit_price} platform: {}",
+                leg.platform
+            );
+
+            match leg.platform {
+                protos::Platform::Kalshi => {
+                    let side_str = match leg.leg {
+                        protos::Leg::Left => "yes",
+                        protos::Leg::Right => "no",
+                    };
+
+                    let safe_price = (limit_price * Decimal::ONE_HUNDRED)
+                        .floor()
+                        .to_u64()
+                        .context("error converting decimal to u64")?;
+
+                    let safe_size = size.to_u64().context("Size too large or negative")?;
+
+                    if safe_size == 0 {
+                        anyhow::bail!("Calculated size should not 0");
+                    }
+
+                    let client_order_id = models::generate_uuid_v5(format!(
+                        "{}:{}:{}",
+                        correlation_id, safe_size, limit_price
+                    ));
+
+                    let req = CreateOrderRequest {
+                        ticker: leg.token_id.clone(),
+                        action: "buy".to_string(),
+                        side: side_str.to_string(),
+                        count: Some(safe_size),
+                        r#type: "limit".to_string(),
+
+                        yes_price: if side_str == "yes" {
+                            Some(safe_price)
+                        } else {
+                            None
+                        },
+                        no_price: if side_str == "no" {
+                            Some(safe_price)
+                        } else {
+                            None
+                        },
+
+                        client_order_id: Some(client_order_id),
+                        post_only: Some(false),
+
+                        // FAK
+                        time_in_force: Some("immediate_or_cancel".to_string()),
+
+                        ..Default::default()
+                    };
+
+                    let order_response = self
+                        .platforms
+                        .kalshi()
+                        .http_client()
+                        .create_order(&req)
+                        .await
+                        .context("error creating kalshi order")?;
+
+                    let filled =
+                        models::opt_str_to_decimal_strict(&order_response.order.fill_count_fp)?;
+
+                    let remaining = models::opt_str_to_decimal_strict(
+                        &order_response.order.remaining_count_fp,
+                    )?;
+
+                    tracing::info!(
+                        "Kalshi Order Executed: Requested {size}, Filled {filled}, Remaining {remaining}"
+                    );
+
+                    Ok((filled, remaining, order_response.order.order_id))
+                }
+
+                protos::Platform::Polymarket => {
+                    let poly_scale = Decimal::new(1_000_000, 0);
+
+                    let order = self
+                        .polymarket_clob_client
+                        .limit_order()
+                        .token_id(U256::from_str(&leg.token_id).context("invalid hex token_id")?)
+                        .size(size.round_dp(2))
+                        .price(limit_price.round_dp(2))
+                        .side(clob::types::Side::Buy)
+                        .order_type(clob::types::OrderType::FAK)
+                        .build()
+                        .await
+                        .context("error creating polymarket order")?;
+
+                    let signed_order = self
+                        .polymarket_clob_client
+                        .sign(&self.poly_signer, order)
+                        .await?;
+                    let response = self.polymarket_clob_client.post_order(signed_order).await?;
+
+                    if !response.success {
+                        let err_msg = response
+                            .error_msg
+                            .unwrap_or_else(|| "Unknown error".to_string());
+                        anyhow::bail!("Polymarket order failed: {}", err_msg);
+                    }
+
+                    let raw_filled = response.taking_amount;
+                    let filled = raw_filled / poly_scale;
+
+                    let remaining = size - filled;
+
+                    tracing::info!(
+                        "Polymarket Order Executed: Requested {size}, Filled {filled}, Remaining {remaining}",
+                    );
+
+                    if response.status == clob::types::OrderStatusType::Unmatched
+                        || filled == Decimal::ZERO
+                    {
+                        tracing::warn!(
+                            "Polymarket order was completely unmatched (Liquidity vanished)."
+                        );
+                    }
+
+                    Ok((filled, remaining, response.order_id))
+                }
+            }
+        }
+
+        async fn hedge_sell_order(
+            &self,
+            leg: &models::ArbMinifiedInfo,
+            excess_size: Decimal,
+            sell_price_dollars: Decimal,
+        ) -> anyhow::Result<(String, protos::Platform, Decimal, Decimal)> {
+            tracing::info!(
+                "making hedge_sell/-order: excess_size: {excess_size}, sell_price_dollars{sell_price_dollars} platform: {}",
+                leg.platform
+            );
+
+            let safe_sell_price = sell_price_dollars.min(Decimal::new(99, 2));
+
+            match leg.platform {
+                protos::Platform::Kalshi => {
+                    let side_str = match leg.leg {
+                        protos::Leg::Left => "yes",
+                        protos::Leg::Right => "no",
+                    };
+
+                    let price_cents = (safe_sell_price * Decimal::ONE_HUNDRED)
+                        .floor()
+                        .to_u64()
+                        .unwrap_or(99);
+
+                    let safe_excess_size = excess_size.floor().to_u64().unwrap_or(0);
+
+                    if safe_excess_size == 0 {
+                        anyhow::bail!("Hedge size too small (rounds to 0). Skipping.");
+                    }
+
+                    let req = CreateOrderRequest {
+                        ticker: leg.token_id.clone(),
+                        action: "sell".to_string(),
+                        side: side_str.to_string(),
+                        count: Some(safe_excess_size),
+                        r#type: "limit".to_string(),
+
+                        yes_price: if side_str == "yes" {
+                            Some(price_cents)
+                        } else {
+                            None
+                        },
+                        no_price: if side_str == "no" {
+                            Some(price_cents)
+                        } else {
+                            None
+                        },
+
+                        client_order_id: Some(uuid::Uuid::new_v4().to_string()),
+                        post_only: Some(true),
+
+                        time_in_force: Some("good_till_canceled".to_string()),
+                        ..Default::default()
+                    };
+
+                    let order_response = self
+                        .platforms
+                        .kalshi()
+                        .http_client()
+                        .create_order(&req)
+                        .await
+                        .context("Failed to post kalshi hedge order")?;
+
+                    tracing::info!("Hedge sell order placed on Kalshi");
+
+                    Ok((
+                        order_response.order.order_id,
+                        protos::Platform::Kalshi,
+                        excess_size,
+                        safe_sell_price,
+                    ))
+                }
+
+                protos::Platform::Polymarket => {
+                    let order = self
+                        .polymarket_clob_client
+                        .limit_order()
+                        .token_id(U256::from_str(&leg.token_id).context("invalid hex token_id")?)
+                        .size(excess_size.round_dp(2))
+                        .price(safe_sell_price.round_dp(2))
+                        .side(clob::types::Side::Sell)
+                        .order_type(clob::types::OrderType::GTC)
+                        .build()
+                        .await
+                        .context("Failed to build Polymarket hedge order")?;
+
+                    let signed_order = self
+                        .polymarket_clob_client
+                        .sign(&self.poly_signer, order)
+                        .await
+                        .context("Failed to sign Polymarket hedge order")?;
+
+                    let response = self
+                        .polymarket_clob_client
+                        .post_order(signed_order)
+                        .await
+                        .context("Failed to post Polymarket hedge order")?;
+
+                    if !response.success {
+                        let err_msg = response
+                            .error_msg
+                            .unwrap_or_else(|| "Unknown error".to_string());
+                        tracing::error!("Polymarket rejected hedge sell order: {}", err_msg);
+                        anyhow::bail!("Polymarket hedge failed: {}", err_msg)
+                    }
+
+                    tracing::info!(
+                        "Hedge SELL order placed on Polymarket at ${}",
+                        safe_sell_price
+                    );
+
+                    Ok((
+                        response.order_id,
+                        protos::Platform::Polymarket,
+                        excess_size,
+                        safe_sell_price,
+                    ))
+                }
+            }
         }
 
         async fn get_execution_metrics_from_http(
@@ -961,240 +1373,6 @@ pub mod exec {
                             Ok((no_ask_price, yes_bid_size))
                         }
                     }
-                }
-            }
-        }
-
-        async fn make_fak_order(
-            &self,
-            leg: &models::ArbMinifiedInfo,
-            size: Decimal,
-            limit_price: Decimal,
-            correlation_id: &models::CorrelationId,
-        ) -> anyhow::Result<(Decimal, Decimal)> {
-            match leg.platform {
-                protos::Platform::Kalshi => {
-                    let side_str = match leg.leg {
-                        protos::Leg::Left => "yes",
-                        protos::Leg::Right => "no",
-                    };
-
-                    let safe_price = (limit_price * Decimal::ONE_HUNDRED)
-                        .floor()
-                        .to_u64()
-                        .context("error converting decimal to u64")?;
-
-                    let safe_size = size.to_u64().context("Size too large or negative")?;
-
-                    if safe_size == 0 {
-                        return Err(anyhow::anyhow!("Calculated size should not 0"));
-                    }
-
-                    let client_order_id = models::generate_uuid_v5(format!(
-                        "{}:{}:{}",
-                        correlation_id, safe_size, limit_price
-                    ));
-
-                    let req = CreateOrderRequest {
-                        ticker: leg.token_id.clone(),
-                        action: "buy".to_string(),
-                        side: side_str.to_string(),
-                        count: Some(safe_size),
-                        r#type: "limit".to_string(),
-
-                        yes_price: if side_str == "yes" {
-                            Some(safe_price)
-                        } else {
-                            None
-                        },
-                        no_price: if side_str == "no" {
-                            Some(safe_price)
-                        } else {
-                            None
-                        },
-
-                        client_order_id: Some(client_order_id),
-                        post_only: Some(false),
-
-                        // FAK
-                        time_in_force: Some("immediate_or_cancel".to_string()),
-
-                        ..Default::default()
-                    };
-
-                    let order_response = self
-                        .platforms
-                        .kalshi()
-                        .http_client()
-                        .create_order(&req)
-                        .await
-                        .context("error creating kalshi order")?;
-
-                    let filled =
-                        models::opt_str_to_decimal_strict(&order_response.order.fill_count_fp)?;
-
-                    let remaining = models::opt_str_to_decimal_strict(
-                        &order_response.order.remaining_count_fp,
-                    )?;
-
-                    tracing::info!(
-                        "Kalshi Order Executed: Requested {size}, Filled {filled}, Remaining {remaining}"
-                    );
-
-                    Ok((filled, remaining))
-                }
-
-                protos::Platform::Polymarket => {
-                    let poly_scale = Decimal::new(1_000_000, 0);
-
-                    let order = self
-                        .polymarket_clob_client
-                        .limit_order()
-                        .token_id(U256::from_str(&leg.token_id).context("invalid hex token_id")?)
-                        .size(size)
-                        .price(limit_price.round_dp(4))
-                        .side(clob::types::Side::Buy)
-                        .order_type(clob::types::OrderType::FAK)
-                        .build()
-                        .await
-                        .context("error creating polymarket order")?;
-
-                    let signed_order = self
-                        .polymarket_clob_client
-                        .sign(&self.poly_signer, order)
-                        .await?;
-                    let response = self.polymarket_clob_client.post_order(signed_order).await?;
-
-                    if !response.success {
-                        let err_msg = response
-                            .error_msg
-                            .unwrap_or_else(|| "Unknown error".to_string());
-                        tracing::error!("❌ Polymarket rejected order: {}", err_msg);
-                        return Err(anyhow::anyhow!("Polymarket order failed: {}", err_msg));
-                    }
-
-                    let raw_filled = response.taking_amount;
-                    let filled = raw_filled / poly_scale;
-
-                    let remaining = size - filled;
-
-                    tracing::info!(
-                        "Polymarket Order Executed: Requested {size}, Filled {filled}, Remaining {remaining}",
-                    );
-
-                    if response.status == clob::types::OrderStatusType::Unmatched
-                        || filled == Decimal::ZERO
-                    {
-                        tracing::warn!(
-                            "Polymarket order was completely unmatched (Liquidity vanished)."
-                        );
-                    }
-
-                    Ok((filled, remaining))
-                }
-            }
-        }
-
-        async fn hedge_sell_order(
-            &self,
-            leg: &models::ArbMinifiedInfo,
-            excess_size: Decimal,
-            sell_price_dollars: Decimal,
-        ) -> anyhow::Result<()> {
-            let safe_sell_price = sell_price_dollars.min(Decimal::new(99, 2)); // incase the pump w/ 5cents goes above $1
-            let price_cents = (safe_sell_price * Decimal::ONE_HUNDRED)
-                .floor()
-                .to_u64()
-                .unwrap_or(99);
-
-            match leg.platform {
-                protos::Platform::Kalshi => {
-                    let side_str = match leg.leg {
-                        protos::Leg::Left => "yes",
-                        protos::Leg::Right => "no",
-                    };
-
-                    let safe_excess_size = excess_size.floor().to_u64().unwrap_or(0);
-
-                    if safe_excess_size == 0 {
-                        tracing::warn!("Hedge size too small (rounds to 0). Skipping.");
-                        return Ok(());
-                    }
-
-                    let req = CreateOrderRequest {
-                        ticker: leg.token_id.clone(),
-                        action: "sell".to_string(),
-                        side: side_str.to_string(),
-                        count: Some(safe_excess_size),
-                        r#type: "limit".to_string(),
-
-                        yes_price: if side_str == "yes" {
-                            Some(price_cents)
-                        } else {
-                            None
-                        },
-                        no_price: if side_str == "no" {
-                            Some(price_cents)
-                        } else {
-                            None
-                        },
-
-                        client_order_id: Some(uuid::Uuid::new_v4().to_string()),
-                        post_only: Some(true),
-
-                        time_in_force: Some("good_till_canceled".to_string()),
-                        ..Default::default()
-                    };
-
-                    self.platforms
-                        .kalshi()
-                        .http_client()
-                        .create_order(&req)
-                        .await
-                        .context("Failed to post kalshi hedge order")?;
-
-                    tracing::info!("✅ Hedge sell order placed on Kalshi");
-                    Ok(())
-                }
-
-                protos::Platform::Polymarket => {
-                    let order = self
-                        .polymarket_clob_client
-                        .limit_order()
-                        .token_id(U256::from_str(&leg.token_id).context("invalid hex token_id")?)
-                        .size(excess_size.floor())
-                        .price(safe_sell_price)
-                        .side(clob::types::Side::Sell)
-                        .order_type(clob::types::OrderType::GTC)
-                        .build()
-                        .await
-                        .context("Failed to build Polymarket hedge order")?;
-
-                    let signed_order = self
-                        .polymarket_clob_client
-                        .sign(&self.poly_signer, order)
-                        .await
-                        .context("Failed to sign Polymarket hedge order")?;
-
-                    let response = self
-                        .polymarket_clob_client
-                        .post_order(signed_order)
-                        .await
-                        .context("Failed to post Polymarket hedge order")?;
-
-                    if !response.success {
-                        let err_msg = response
-                            .error_msg
-                            .unwrap_or_else(|| "Unknown error".to_string());
-                        tracing::error!("Polymarket rejected hedge sell order: {}", err_msg);
-                        return Err(anyhow::anyhow!("Polymarket hedge failed: {}", err_msg));
-                    }
-
-                    tracing::info!(
-                        "✅ Hedge SELL order placed on Polymarket at ${}",
-                        safe_sell_price
-                    );
-                    Ok(())
                 }
             }
         }
