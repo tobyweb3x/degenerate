@@ -1,37 +1,58 @@
-use super::{WsEventMessage, format_duration_ago};
-use crate::models::QdrantMarketConverter;
-use crate::models::{self, protos};
+use super::{WsEventMessage, format_duration_ago, ok_bet_types};
+use crate::models::{self, QdrantMarketConverter, protos};
 use crate::vector_store;
 use anyhow::Context;
 use chrono::{Duration as ChronoDuration, SecondsFormat, Utc};
+use futures_util::{SinkExt, StreamExt, stream};
 use polymarket_hft::client::polymarket::{
     clob::{self, ws::WsMessage},
     gamma,
 };
+use std::sync::Arc;
 use std::{collections::HashSet, fs, time::Duration};
-use tokio::{sync::mpsc, task::JoinSet};
+use tokio::net::TcpStream;
+use tokio::{
+    sync::{Mutex, mpsc},
+    task::JoinSet,
+};
+use tokio_tungstenite::{
+    MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
+};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub struct MyPolymarketClient {
     gamma_client: gamma::Client,
-    clob_ws_client: clob::ws::ClobWsClient,
+    clob_ws_client: Arc<Mutex<clob::ws::ClobWsClient>>,
     qdrant_client: vector_store::VectorStore,
-    ws_tx: mpsc::Sender<WsEventMessage>,
+    ws_msg_tx: mpsc::Sender<WsEventMessage>,
     order_book_http: clob::Client,
+    okbet_tx: Arc<
+        Mutex<
+            Option<
+                stream::SplitSink<
+                    WebSocketStream<MaybeTlsStream<TcpStream>>,
+                    tokio_tungstenite::tungstenite::Message,
+                >,
+            >,
+        >,
+    >,
+    okbet_rx: Arc<Mutex<Option<stream::SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>>,
 }
 
 impl MyPolymarketClient {
     pub fn new(
         qdrant_client: vector_store::VectorStore,
-        ws_tx: mpsc::Sender<WsEventMessage>,
+        ws_msg_tx: mpsc::Sender<WsEventMessage>,
     ) -> Self {
         Self {
             gamma_client: gamma::Client::new(),
-            clob_ws_client: clob::ws::ClobWsClient::new(),
+            clob_ws_client: Arc::new(Mutex::new(clob::ws::ClobWsClient::new())),
             qdrant_client,
-            ws_tx,
+            ws_msg_tx,
             order_book_http: clob::Client::new(),
+            okbet_rx: Arc::new(Mutex::new(None)),
+            okbet_tx: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -46,24 +67,34 @@ impl MyPolymarketClient {
         &self.gamma_client
     }
 
-    pub fn ws_client(&self) -> clob::ws::ClobWsClient {
-        self.clob_ws_client.clone()
+    pub async fn test_ws_connect(&mut self) -> anyhow::Result<()> {
+        self.connect_okbet_ws().await
     }
 
     pub async fn run_polymarket(&mut self, shutdown: CancellationToken) -> anyhow::Result<()> {
-        self.clob_ws_client.subscribe_market(vec![], true).await?;
+        {
+            let mut polymarket_ws_client = self.clob_ws_client.lock().await;
+            polymarket_ws_client.subscribe_market(vec![], true).await?;
+        }
 
         let duration = std::time::Duration::from_secs(60 * 60 + 30 * 60);
         let mut one_hour_thirty_min_ticker = tokio::time::interval(duration);
         let mut ws_is_alive = true;
 
-        one_hour_thirty_min_ticker.tick().await; // fires first tick
+        let mut okbet_rx_stream = {
+            let mut guard = self.okbet_rx.lock().await;
+            guard
+                .take()
+                .context("Okbet WebSocket receiver is missing!")?
+        };
+
+        one_hour_thirty_min_ticker.tick().await;
         loop {
             tokio::select! {
-                biased;
                 _ = shutdown.cancelled() => {
                     tracing::trace!("polymarket received shutdown");
-                    self.clob_ws_client.disconnect().await;
+                     let mut polymarket_ws_client = self.clob_ws_client.lock().await;
+                    polymarket_ws_client.disconnect().await;
                     break;
                 }
 
@@ -73,7 +104,11 @@ impl MyPolymarketClient {
                     .inspect_err(|e| tracing::error!("error handling polymarket msg(backfill): {e:?}"));
                 }
 
-                result = self.clob_ws_client.next_message(), if ws_is_alive => {
+                result =  async {
+                    let mut polymarket_ws_client = self.clob_ws_client.lock().await;
+                    polymarket_ws_client.next_message().await
+
+                }, if ws_is_alive => {
                       let Some(msg) = result else {
                       tracing::error!("polymarket WS connection was ended");
                       ws_is_alive = false;
@@ -83,6 +118,27 @@ impl MyPolymarketClient {
                     let _ = self.handle_polymarket_wss_message(msg).await
                     .inspect_err(|e| tracing::error!("error handling polymarket msg(wss): {e:?}"));
                 }
+
+                msg = okbet_rx_stream.next() => {
+                    let Some(msg) = msg else {
+                        tracing::error!("okbet WS connection was ended");
+                        continue;
+                    };
+
+                    match msg {
+                        Ok(msg) => {
+                            let _ = self.handle_okbet_messages(msg).await
+                            .inspect_err(|e| tracing::error!("error from handle_okbet_messages:{e}"));
+
+                        },
+                        Err(e) => {
+                            tracing::error!("err from okbet_rx_stream: {e}")
+                        }
+
+                    }
+                }
+
+
             }
         }
 
@@ -92,7 +148,6 @@ impl MyPolymarketClient {
 
     async fn handle_polymarket_wss_message(&self, msg: WsMessage) -> anyhow::Result<()> {
         match msg {
-            // !!: this does not make sense no more, let just poll, new market is def. illiquid
             clob::ws::WsMessage::NewMarket(msg) => {
                 let value = self
                     .gamma_client
@@ -127,7 +182,7 @@ impl MyPolymarketClient {
             }
 
             clob::ws::WsMessage::BestBidAsk(best) => {
-                self.ws_tx
+                self.ws_msg_tx
                     .send(WsEventMessage::Polymarket(clob::ws::WsMessage::BestBidAsk(
                         best,
                     )))
@@ -135,7 +190,7 @@ impl MyPolymarketClient {
             }
 
             clob::ws::WsMessage::MarketResolved(resolved) => {
-                self.ws_tx
+                self.ws_msg_tx
                     .send(WsEventMessage::Polymarket(
                         clob::ws::WsMessage::MarketResolved(resolved),
                     ))
@@ -155,6 +210,58 @@ impl MyPolymarketClient {
             }
         }
         None
+    }
+
+    pub async fn subscribe_to_market_channel_on_all_ws(
+        &self,
+        asset_ids: Vec<String>,
+    ) -> anyhow::Result<()> {
+        let mut ws_client = self.clob_ws_client.lock().await;
+
+        ws_client
+            .subscribe_market(asset_ids.clone(), true)
+            .await
+            .context("error subscribing via polymark ws")?;
+
+        drop(ws_client);
+
+        let payload = serde_json::json!({
+            "action": "subscribe",
+            "platform": "polymarket",
+            "markets": asset_ids,
+        });
+
+        self.send_to_okbet_wss(payload.to_string())
+            .await
+            .context("error subscribing via okbet ws")?;
+
+        Ok(())
+    }
+
+    pub async fn unsubscribe_to_market_channel_on_all_ws(
+        &self,
+        asset_ids: Vec<String>,
+    ) -> anyhow::Result<()> {
+        {
+            let ws_client = self.clob_ws_client.lock().await;
+
+            ws_client
+                .unsubscribe_assets_from_market_channel(asset_ids.clone())
+                .await
+                .context("error subscribing via polymark ws")?;
+        }
+
+        let payload = serde_json::json!({
+            "action": "unsubscribe",
+            "platform": "polymarket",
+            "markets": asset_ids,
+        });
+
+        self.send_to_okbet_wss(payload.to_string())
+            .await
+            .context("error subscribing via okbet ws")?;
+
+        Ok(())
     }
 
     async fn backfill_polymarket_politics_history(
@@ -343,4 +450,98 @@ impl MyPolymarketClient {
 pub fn get_signer() -> anyhow::Result<String> {
     let data = fs::read_to_string("privateKey.hex").context("error getting private_key")?;
     Ok(data)
+}
+
+impl MyPolymarketClient {
+    async fn connect_okbet_ws(&self) -> anyhow::Result<()> {
+        let url = "wss://okbet.trade/api/public/ws/markets";
+        let (ws_stream, _response) = connect_async(url)
+            .await
+            .context("Failed to connect to Okbet WebSocket")?;
+
+        let (write, read) = ws_stream.split();
+
+        *self.okbet_tx.lock().await = Some(write);
+        *self.okbet_rx.lock().await = Some(read);
+        Ok(())
+    }
+
+    pub async fn send_to_okbet_wss(&self, payload: impl Into<String>) -> anyhow::Result<()> {
+        let mut guard = self.okbet_tx.lock().await;
+
+        let sender = guard
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("okbet_tx not initialized"))?;
+
+        let msg = Message::Text(payload.into().into());
+        sender.send(msg).await.context("okbet_tx: cannot send")?;
+
+        Ok(())
+    }
+
+    async fn handle_okbet_messages(&mut self, msg: Message) -> anyhow::Result<()> {
+        match msg {
+            Message::Ping(data) => {
+                let mut guard = self.okbet_tx.lock().await;
+
+                let sender = guard
+                    .as_mut()
+                    .ok_or_else(|| anyhow::anyhow!("okbet_tx not initialized"))?;
+
+                let msg = Message::Pong(data);
+                sender.send(msg).await.context("okbet_tx: cannot send")?;
+
+                return Ok(());
+            }
+
+            Message::Pong(_) => {
+                tracing::info!("okbet_rx_stream: got a Pong");
+            }
+
+            Message::Close(_) => {
+                tracing::info!("okbet_rx_stream: got a close")
+            }
+
+            Message::Text(text) => {
+                tracing::info!("okbet_rx_stream: Received: {}", text);
+                match serde_json::from_str::<ok_bet_types::WsMessage>(&text) {
+                    Ok(msg) => match msg {
+                        ok_bet_types::WsMessage::Ping => {
+                            let pong = r#"{"type":"pong"}"#;
+                            if let Err(e) = self.send_to_okbet_wss(pong).await {
+                                tracing::error!("okbet_rx_stream: error sending pong text: {e}");
+                            };
+                        }
+
+                        ok_bet_types::WsMessage::MarketPrice { data, .. } => {
+                            tracing::info!(
+                                "PRICE => token: {}, price: {}, bid: {}, ask: {}",
+                                data.token_id,
+                                data.price,
+                                data.best_bid,
+                                data.best_ask
+                            );
+
+                            self.ws_msg_tx
+                                .send(WsEventMessage::Polymarket(data.try_into().context(
+                                    "okbet_rx_stream: error converting okbet msg into polymark msg",
+                                )?))
+                                .await?
+                        }
+
+                        ok_bet_types::WsMessage::Other(_) => {}
+                    },
+                    Err(e) => {
+                        tracing::error!("okbet_rx_stream: Failed to parse message: {e}");
+                    }
+                }
+            }
+
+            others => {
+                tracing::info!("okbet_rx_stream: Received others: {}", others);
+            }
+        }
+
+        Ok(())
+    }
 }

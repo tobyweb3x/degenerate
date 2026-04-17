@@ -83,7 +83,7 @@ func (a *App) similarityHitsPage(w http.ResponseWriter, r *http.Request) {
 
 	if isHXRequest(r) {
 		w.Header().Set("Content-Type", "text/html")
-		if err := frontend.SimilarityHitPartial(templModels).Render(r.Context(), w); err != nil {
+		if err := frontend.SimilarityHitsPartial(templModels).Render(r.Context(), w); err != nil {
 			a.serverError(w, err)
 			return
 		}
@@ -316,7 +316,6 @@ func (a *App) resolveHitSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html")
 	http.Redirect(w, r, "/hits", http.StatusSeeOther)
 }
 
@@ -333,7 +332,6 @@ func (a *App) resolveArbConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html")
 	http.Redirect(w, r, "/arbs", http.StatusSeeOther)
 }
 
@@ -382,7 +380,6 @@ func (a *App) resolveArbConfirmAndRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html")
 	http.Redirect(w, r, "/arbs", http.StatusSeeOther)
 }
 
@@ -409,10 +406,9 @@ func (a *App) softDeleteHit(w http.ResponseWriter, r *http.Request) {
 		a.serverError(w, err)
 		return
 	}
-	// counts := countPlatformAchorsfromHit(templModels)
 
 	w.Header().Set("Content-Type", "text/html")
-	if err := frontend.SimilarityHitPartial(templModels).Render(r.Context(), w); err != nil {
+	if err := frontend.SimilarityHitsPartial(templModels).Render(r.Context(), w); err != nil {
 		a.serverError(w, err)
 		return
 	}
@@ -435,7 +431,6 @@ func (a *App) bulkSoftDeleteHits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html")
 	http.Redirect(w, r, "/hits", http.StatusSeeOther)
 }
 func (a *App) deleteArb(w http.ResponseWriter, r *http.Request) {
@@ -514,8 +509,31 @@ func (a *App) bulkDeleteArbs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html")
 	http.Redirect(w, r, "/arbs", http.StatusSeeOther)
+}
+
+func (a *App) ordersPage(w http.ResponseWriter, r *http.Request) {
+
+	orders, err := a.db.GetOrderWithExcess(r.Context(), 5_000)
+	if err != nil {
+		a.serverError(w, err)
+		return
+	}
+
+	if isHXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
+		if err := frontend.OrdersPartial(orders).Render(r.Context(), w); err != nil {
+			a.serverError(w, err)
+			return
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	if err := frontend.OrdersPage(orders).Render(context.TODO(), w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 const polymarketGetSlugURL = "https://gamma-api.polymarket.com/markets/slug"

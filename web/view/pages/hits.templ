@@ -9,10 +9,10 @@ import (
 )
 
 templ SimilarityHitsPage(param []TemplateModel[protos.ClientEbo_CrossPlatformHit]) {
-	@document(SimilarityHitPartial(param), nil)
+	@document(SimilarityHitsPartial(param), nil)
 }
 
-templ SimilarityHitPartial(param []TemplateModel[protos.ClientEbo_CrossPlatformHit]) {
+templ SimilarityHitsPartial(param []TemplateModel[protos.ClientEbo_CrossPlatformHit]) {
 	<div id="content" class="h-full">
 		<div class="mx-3 h-full flex flex-col">
 			<div class="flex gap-3 py-4 justify-center items-center w-fit">

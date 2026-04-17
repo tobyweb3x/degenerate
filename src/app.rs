@@ -21,10 +21,9 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
     let (ws_tx, ws_rx) = mpsc::channel::<platforms::WsEventMessage>(1_024); // takes platform wss messages from platform to picker-comms
     let (execution_tx, execution_rx) = mpsc::channel(512); // takes messages from picker-comms to picker-exec
 
-    // =    // vector store
+    // vector store
     let (vector_store, vector_store_cleanup_handle) = {
         let vector_store = vector_store::VectorStore::new_auto(
-            // "http://localhost:6334",
             std::env::var("QDRANT_URL")
                 .unwrap_or_else(|_| "http://localhost:6334".to_string())
                 .as_str(),
@@ -61,8 +60,9 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<OponIfa> {
             platforms::kalshi::MyKalshiClient::new(kalshi_account, kalshi_vs, ws_tx.clone());
         kalshi_client.test_ws_connect().await?;
 
-        let polymarket_client =
+        let mut polymarket_client =
             platforms::polymarket::MyPolymarketClient::new(polymarket_vs, ws_tx.clone());
+        polymarket_client.test_ws_connect().await?;
 
         (polymarket_client, kalshi_client)
     };

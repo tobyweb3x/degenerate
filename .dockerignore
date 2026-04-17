@@ -5,3 +5,4 @@ target
 web
 Dockerfile*
 docker-compose*
+examples

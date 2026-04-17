@@ -213,8 +213,7 @@ pub mod comms {
                         if let Err(e) = self
                             .platforms
                             .polymarket()
-                            .ws_client()
-                            .subscribe_market(vec![token_id.clone()], true)
+                            .subscribe_to_market_channel_on_all_ws(vec![token_id.clone()])
                             .await
                         {
                             tracing::error!(
@@ -567,7 +566,8 @@ pub mod comms {
 
                         // ✅ clone clients (must be Arc or cheap clone)
                         let kalshi = self.platforms.kalshi().ws_client().clone();
-                        let polymarket = self.platforms.polymarket().ws_client().clone();
+
+                        let polymarket = self.platforms.polymarket().clone();
 
                         tokio::spawn(async move {
                             match platform {
@@ -590,7 +590,7 @@ pub mod comms {
 
                                 protos::Platform::Polymarket => {
                                     if let Err(e) = polymarket
-                                        .unsubscribe_assets_from_market_channel(vec![token_id])
+                                        .unsubscribe_to_market_channel_on_all_ws(vec![token_id])
                                         .await
                                     {
                                         tracing::error!(

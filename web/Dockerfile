@@ -6,9 +6,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -mod=vendor -o /app/web main.go
 
-FROM alpine:latest
-
-RUN apk --no-cache add ca-certificates tzdata
+FROM gcr.io/distroless/static-debian12:latest
 
 WORKDIR /app
 
@@ -19,4 +17,4 @@ COPY --from=builder /app/view/public /app/view/public
 EXPOSE 8090
 EXPOSE 50051
 
-CMD ["./web"]
+CMD ["/app/web"]

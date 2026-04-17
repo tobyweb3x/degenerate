@@ -1,0 +1,20 @@
+package frontend
+
+import "web/service/repository/postgres"
+
+templ OrdersPage(param []postgres.GetOrderWithExcessRow) {
+	@document(OrdersPartial(param), nil)
+}
+
+templ OrdersPartial(param []postgres.GetOrderWithExcessRow) {
+	<div id="content" class="h-full">
+		<div class="mx-3 h-full flex flex-col">
+			<p class="text-2xl font-archivoSemiBold text-left">Orders</p>
+			if len(param) > 0 {
+				<div></div>
+			} else {
+				<p class="h-full w-full mx-auto my-auto text-2xl font-dmSans text-center items-center grid place-items-center">No order history</p>
+			}
+		</div>
+	</div>
+}

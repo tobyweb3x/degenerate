@@ -50,22 +50,64 @@ fn format_duration_ago(duration: Duration) -> String {
     }
 }
 
-// tracing::info!(
-//     "🚨 ARB FOUND! [{}] Total Cost: ${:.3} | Expected Payout: $1.00 | Max Size: {}",
-//     cid,
-//     total_cost,
-//     max_size
-// );
+mod ok_bet_types {
+    use anyhow::Ok;
+    use polymarket_hft::client::polymarket::clob;
+    use serde::Deserialize;
 
-// tracing::info!(
-//     "   -> Leg 1 [{:?}]: Buy {} @ ${:.3}",
-//     watch.arb.anchor.platform.as_str_name(),
-//     max_size,
-//     a_price.best_ask
-// );
-// tracing::info!(
-//     "   -> Leg 2 [{:?}]: Buy {} @ ${:.3}",
-//     watch.arb.r#match.platform.as_str_name(),
-//     max_size,
-//     m_price.best_ask
-// );
+    #[derive(Debug, Deserialize)]
+    #[serde(tag = "type")]
+    pub enum WsMessage {
+        #[serde(rename = "ping")]
+        Ping,
+
+        #[serde(rename = "market.price")]
+        MarketPrice {
+            channel: String,
+            timestamp: u64,
+            data: PriceData,
+        },
+
+        Other(serde_json::Value),
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub struct PriceData {
+        pub token_id: String,
+        pub platform: String,
+        pub price: String,
+        pub best_bid: String,
+        pub best_ask: String,
+        pub timestamp: String,
+    }
+
+    impl TryFrom<PriceData> for clob::ws::WsMessage {
+        type Error = anyhow::Error;
+
+        fn try_from(value: PriceData) -> Result<Self, Self::Error> {
+            if value.best_ask.is_empty() {
+                anyhow::bail!("PriceData from okbet has empty best_ask")
+            }
+
+            if value.best_bid.is_empty() {
+                anyhow::bail!("PriceData from okbet has empty best_bid")
+            }
+
+            if value.token_id.is_empty() {
+                anyhow::bail!("PriceData from okbet has empty token_id")
+            }
+
+            Ok(clob::ws::WsMessage::BestBidAsk(
+                clob::ws::BestBidAskMessage {
+                    asset_id: value.token_id,
+                    best_ask: value.best_ask,
+                    best_bid: value.best_bid,
+                    timestamp: value.timestamp,
+                    spread: String::new(),
+                    market: String::new(),
+                    event_type: String::new(),
+                },
+            ))
+        }
+    }
+}

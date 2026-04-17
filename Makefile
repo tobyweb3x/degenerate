@@ -16,10 +16,18 @@ zip:
 		-x "$(BASE_NAME)-*.zip"
 	@echo "✅ Done! Archive created: $(ZIP_FILE)"
 
-
-.PHONY: build
-
 build:
+	@echo "🛠️  Running code generators..."
+	$(MAKE) -C web sqlc && \
+	$(MAKE) -C web minify && \
+	$(MAKE) -C web templ && \
+	$(MAKE) -C web go-vendor && \
+	echo "🚀 Deploying with Docker Compose..." && \
+	docker compose down
+	docker compose build
+
+
+run:
 	@echo "🛠️  Running code generators..."
 	$(MAKE) -C web sqlc && \
 	$(MAKE) -C web minify && \
@@ -29,3 +37,6 @@ build:
 	docker compose down
 	docker compose up --build -d
 	docker compose logs -f
+
+
+.PHONY: build run zip 

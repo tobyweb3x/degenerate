@@ -28,7 +28,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: sh -c "sleep 5 && ./degenerate"
+    command: sh -c "sleep 3 && ./degenerate"
     environment:
       - QDRANT_URL=http://qdrant:6334 # Points to the Qdrant container
       - GRPC_URL=http://go-backend:50051 # Points to the Go container

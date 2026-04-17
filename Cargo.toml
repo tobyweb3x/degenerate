@@ -50,3 +50,6 @@ sentence-transformers-rs = { path = "./crates/sentence-transformers-rs", feature
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 sentence-transformers-rs = { path = "./crates/sentence-transformers-rs" }
 
+[dev-dependencies]
+url = "2.5.8"
+

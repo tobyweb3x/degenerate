@@ -31,7 +31,6 @@ func LoadEnv(cfg *EnvConfig) error {
 		if err := godotenv.Load(".env"); err != nil {
 			return fmt.Errorf("error loading .env file: %s", err.Error())
 		}
-
 	}
 
 	return env.Parse(cfg)
