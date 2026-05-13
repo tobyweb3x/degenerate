@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
                 flatten(app_runtime.grpc_handle),
                 flatten(app_runtime.picker_comms_handle),
                 flatten(app_runtime.picker_exec_handle),
-                flatten(app_runtime.vector_store_cleanup_handle)
+                flatten(app_runtime.vector_store_cleanup_handle),
             )
         } => {
             match res {

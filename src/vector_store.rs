@@ -19,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 
 use std::convert::TryFrom;
 use std::sync::Arc;
-use tokio::{sync::mpsc, task};
+use tokio::task;
 
 pub const COLLECTION_NAME: &str = "Aroni";
 
@@ -38,17 +38,15 @@ pub struct VectorStore {
     qdrant_client: Qdrant,
     collection_name: &'static str,
     semantic_model: Arc<SentenceTransformer>,
-    tx: mpsc::Sender<protos::ClientEbo>,
 }
 
 impl VectorStore {
     pub async fn new_auto(
         url: &str,
         collection_name: &'static str,
-        tx: mpsc::Sender<protos::ClientEbo>,
     ) -> anyhow::Result<Self> {
         let device = candle_core::Device::metal_if_available(0).context("error using metal")?;
-        let vs = Self::new(url, collection_name, device, tx).await?;
+        let vs = Self::new(url, collection_name, device).await?;
         tracing::info!("successfully setup vector store");
         Ok(vs)
     }
@@ -57,7 +55,6 @@ impl VectorStore {
         url: &str,
         collection_name: &'static str,
         device: Device,
-        tx: mpsc::Sender<protos::ClientEbo>,
     ) -> anyhow::Result<Self> {
         let client = Qdrant::from_url(url)
             .skip_compatibility_check()
@@ -85,7 +82,6 @@ impl VectorStore {
             qdrant_client: client,
             collection_name,
             semantic_model: Arc::new(model),
-            tx,
         })
     }
 
@@ -242,12 +238,16 @@ impl VectorStore {
         anyhow::Ok(())
     }
 
+    /// Searches for similar points and inserts the new one if a match is found.
+    /// Returns the `ClientEbo` discovery event to send to gRPC, or `None` if no
+    /// similar market was found. The caller owns the send so the vector store
+    /// stays decoupled from the gRPC transport.
     pub async fn search_and_insert<T>(
         &self,
         point_data: T,
         score_threshold: f32,
         filter: Option<Filter>,
-    ) -> anyhow::Result<()>
+    ) -> anyhow::Result<Option<protos::ClientEbo>>
     where
         T: TryInto<models::QdrantPointData>,
         T::Error: Into<anyhow::Error>,
@@ -262,7 +262,7 @@ impl VectorStore {
             .await?;
 
         if response.result.is_empty() {
-            return anyhow::Ok(());
+            return Ok(None);
         }
 
         let clone_anchor_market_info = anchor
@@ -274,25 +274,23 @@ impl VectorStore {
         // insert
         self.insert(point).await?;
 
-        self.tx
-            .send(protos::ClientEbo {
-                correlation_id: models::generate_uuid_v5(format!(
-                    "{}:{}",
-                    clone_anchor_market_info.uuid, clone_anchor_market_info.market_id
-                )),
-                action_at: chrono::Utc::now().timestamp_millis(),
-                action: Some(protos::client_ebo::Action::CrossPlatformHit(hit)),
-            })
-            .await
-            .context("error sending to channel")?;
-        anyhow::Ok(())
+        Ok(Some(protos::ClientEbo {
+            correlation_id: models::generate_uuid_v5(format!(
+                "{}:{}",
+                clone_anchor_market_info.uuid, clone_anchor_market_info.market_id
+            )),
+            action_at: chrono::Utc::now().timestamp_millis(),
+            action: Some(protos::client_ebo::Action::CrossPlatformHit(hit)),
+        }))
     }
 
-    pub async fn multiple_search_and_inserth<T>(
+    /// Batch version of `search_and_insert`. Returns all discovery `ClientEbo`
+    /// events; the caller is responsible for forwarding them to gRPC.
+    pub async fn multiple_search_and_insert<T>(
         &self,
         values: Vec<(T, Option<Filter>)>,
         chunk_size: usize,
-    ) -> anyhow::Result<()>
+    ) -> anyhow::Result<Vec<protos::ClientEbo>>
     where
         T: TryInto<models::QdrantPointData>,
         T::Error: Into<anyhow::Error>,
@@ -336,7 +334,7 @@ impl VectorStore {
         let responses = self.semantic_similarity_search_batch(query_points).await?;
 
         if responses.result.is_empty() {
-            return anyhow::Ok(());
+            return Ok(vec![]);
         }
 
         if takes.len() != responses.result.len() {
@@ -350,6 +348,7 @@ impl VectorStore {
         // insert
         self.insert_many(point_structs, chunk_size).await?;
 
+        let mut ebos = Vec::new();
         for (take, response) in takes.into_iter().zip(responses.result) {
             if response.result.is_empty() {
                 continue;
@@ -361,20 +360,17 @@ impl VectorStore {
                 .context("market_info should not be None")?;
             let hit = protos::SimilarityHit::try_from_results(take, response.result)?;
 
-            self.tx
-                .send(protos::ClientEbo {
-                    correlation_id: models::generate_uuid_v5(format!(
-                        "{}:{}",
-                        clone_take_market_info.uuid, clone_take_market_info.market_id
-                    )),
-                    action_at: chrono::Utc::now().timestamp_millis(),
-                    action: Some(protos::client_ebo::Action::CrossPlatformHit(hit)),
-                })
-                .await
-                .context("error sending to channel")?;
+            ebos.push(protos::ClientEbo {
+                correlation_id: models::generate_uuid_v5(format!(
+                    "{}:{}",
+                    clone_take_market_info.uuid, clone_take_market_info.market_id
+                )),
+                action_at: chrono::Utc::now().timestamp_millis(),
+                action: Some(protos::client_ebo::Action::CrossPlatformHit(hit)),
+            });
         }
 
-        anyhow::Ok(())
+        Ok(ebos)
     }
 
     pub async fn run_delete_old_points(&self, shutdown: CancellationToken) -> anyhow::Result<()> {

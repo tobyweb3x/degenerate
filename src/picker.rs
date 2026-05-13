@@ -6,24 +6,62 @@ pub mod comms {
     use anyhow::{self, Context};
     use chrono::{DateTime, Duration, Utc};
     use kalshi_rs::websocket::models::KalshiSocketMessage;
+    use parking_lot::RwLock;
     use polymarket_hft::client::polymarket::clob;
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
+    use std::sync::Arc;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
     use tracing;
+
+    pub type SharedTob = Arc<RwLock<HashMap<models::MarketKey, models::TopOfBook>>>;
+
     mod book {
         use std::collections::{HashMap, HashSet};
 
+        /// In-memory state for all active arb watches.
+        ///
+        /// Two indexes are kept in sync at all times:
+        ///
+        /// ```text
+        /// registry:  MarketKey  →  {CorrelationId, …}
+        /// records:   CorrelationId  →  ArbWatch (both legs)
+        /// ```
+        ///
+        /// **registry** is the *reverse* index used by the WS price path.
+        /// When a price update arrives for a market, we look it up here to
+        /// find every arb that has that market as a leg, then call
+        /// `evaluate_arb` on each one.  A single market can be a leg in
+        /// multiple arbs simultaneously, so the value is a set.
+        ///
+        /// **records** is the *forward* index used everywhere else.  Given a
+        /// correlation-ID we can retrieve the full `ArbWatch`, which carries
+        /// both leg's `ArbMinifiedInfo` (market key, platform, close time,
+        /// leg side, etc.).
+        ///
+        /// ### Lifecycle
+        ///
+        /// `register_arb`   — inserts `cid` into `registry` for **both** legs
+        ///                    (anchor and match), stores the full record.
+        ///
+        /// `unregister_arb` — removes `cid` from `records` (retrieves both
+        ///                    leg keys from the record), then removes `cid`
+        ///                    from each leg's registry set.  Only when a set
+        ///                    goes **empty** (no other arb still watches that
+        ///                    market) do we evict the market key from
+        ///                    `registry`, remove it from `top_of_book`, and
+        ///                    fire the WS unsubscribe — preserving live data
+        ///                    for any other arb still on that market.
         pub(super) struct Book {
-            pub top_of_book: HashMap<super::models::MarketKey, super::models::TopOfBook>,
+            /// Reverse index: market → all arb IDs watching it.
             pub registry: HashMap<super::models::MarketKey, HashSet<super::models::CorrelationId>>,
+            /// Forward index: arb ID → full watch record with both legs.
             pub records: HashMap<super::models::CorrelationId, super::models::ArbWatch>,
         }
 
         impl Default for Book {
             fn default() -> Self {
                 Self {
-                    top_of_book: HashMap::with_capacity(512),
                     registry: HashMap::with_capacity(512),
                     records: HashMap::with_capacity(512),
                 }
@@ -43,6 +81,7 @@ pub mod comms {
         tx: mpsc::Sender<protos::ClientEbo>,
         ws_rx: mpsc::Receiver<platforms::WsEventMessage>,
         execution_tx: mpsc::Sender<models::ExecutionRequest>,
+        top_of_book: SharedTob,
         book: book::Book,
     }
 
@@ -53,14 +92,16 @@ pub mod comms {
             tx: mpsc::Sender<protos::ClientEbo>,
             ws_rx: mpsc::Receiver<platforms::WsEventMessage>,
             execution_tx: mpsc::Sender<models::ExecutionRequest>,
+            top_of_book: SharedTob,
         ) -> Self {
             Self {
                 platforms,
                 rx,
                 tx,
                 ws_rx,
-                book: book::Book::new(),
                 execution_tx,
+                top_of_book,
+                book: book::Book::new(),
             }
         }
 
@@ -75,7 +116,6 @@ pub mod comms {
                         break;
                     }
 
-
                     msg = self.ws_rx.recv() => { // from platforms ws
                          let Some(ev_msg) = msg else {
                             tracing::info!("got a None instead of todo, picker_comms closed");
@@ -86,13 +126,13 @@ pub mod comms {
                         match ev_msg {
                            platforms::WsEventMessage::Polymarket(data) => {
                                if let Err(e) = self.handle_poly_messages(data) {
-                                tracing::error!("error from fn handle_poly_messages: {e:#?}");
+                                tracing::error!("error from fn picker:handle_poly_messages: {e:#?}");
                                };
                             },
 
                             platforms::WsEventMessage::Kalshi(data) => {
                                 if let Err(e) = self.handle_kalshi_messages(data){
-                                    tracing::error!("error from fn handle_kalshi_messages: {e:#?}");
+                                    tracing::error!("error from fn picker:handle_kalshi_messages: {e:#?}");
                                 };
                             },
                         }
@@ -110,6 +150,7 @@ pub mod comms {
                         };
 
                         let correlation_id = ebo.correlation_id;
+
                         // async work
                         match action {
                             protos::server_ebo::Action::CrossPlatformArbDiscovery(list)
@@ -206,40 +247,43 @@ pub mod comms {
                 (match_platform, match_token_id),
             ];
 
-            // subscribe to market channel
+            let mut subscribed_count = 0usize;
             for (platform, token_id) in entries {
                 match platform {
                     protos::Platform::Polymarket => {
                         if let Err(e) = self
                             .platforms
                             .polymarket()
-                            .subscribe_to_market_channel_on_all_ws(vec![token_id.clone()])
+                            .add_market_ticker(&token_id)
                             .await
                         {
                             tracing::error!(
-                                "error subscribing polymarket token_id to ws market channel: {e}"
+                                "error add_market_ticker for polymarket {token_id}: {e}"
                             );
                             continue;
                         };
+                        subscribed_count += 1;
                         tracing::info!("succesfully subscribe for {token_id} on Polymarket")
                     }
 
                     protos::Platform::Kalshi => {
-                        if let Err(e) = self
-                            .platforms
-                            .kalshi()
-                            .ws_client()
-                            .subscribe(vec!["ticker"], vec![token_id.as_str()])
-                            .await
-                        {
-                            tracing::error!(
-                                "error subscribing kalshi ticker to ws market channel: {e}"
-                            );
+                        if let Err(e) = self.platforms.kalshi().add_market_ticker(&token_id).await {
+                            tracing::error!("error add_market_ticker for kalshi {token_id}: {e}");
                             continue;
                         }
-                        tracing::info!("succesfully subscribe for {token_id} on kalshi")
+
+                        subscribed_count += 1;
+                        tracing::info!("successfully subscribed {token_id} on kalshi")
                     }
                 }
+            }
+
+            if subscribed_count < 2 {
+                tracing::warn!(
+                    "arb {} dropped: only {subscribed_count}/2 legs subscribed successfully",
+                    correlation_id
+                );
+                return Ok(());
             }
 
             self.register_arb(models::ArbWatch {
@@ -384,17 +428,15 @@ pub mod comms {
         async fn delete_arb(&mut self, correlation_id: String) -> anyhow::Result<()> {
             self.unregister_arb(&correlation_id);
 
-            let ebo = protos::ClientEbo {
-                action: Some(protos::client_ebo::Action::DeleteRunningArbs(
-                    protos::DeleteRunningArbRequest {
-                        correlation_ids: vec![correlation_id],
-                    },
-                )),
-                ..Default::default()
-            };
-
             self.tx
-                .send(ebo)
+                .send(protos::ClientEbo {
+                    action: Some(protos::client_ebo::Action::DeleteRunningArbs(
+                        protos::DeleteRunningArbRequest {
+                            correlation_ids: vec![correlation_id],
+                        },
+                    )),
+                    ..Default::default()
+                })
                 .await
                 .context("error sending DeleteRunningArbs")
         }
@@ -404,10 +446,10 @@ pub mod comms {
         fn handle_poly_messages(&mut self, msg: clob::ws::WsMessage) -> anyhow::Result<()> {
             match msg {
                 clob::ws::WsMessage::BestBidAsk(best) => {
-                    println!(
-                        "we're getting poly BestBidAsk update for:{}",
-                        best.asset_id.as_str()
-                    );
+                    // println!(
+                    //     "we're getting poly BestBidAsk update for:{}",
+                    //     best.asset_id.as_str()
+                    // );
                     self.on_price_update(
                         models::make_market_key(&best.asset_id, protos::Platform::Polymarket),
                         models::TopOfBook {
@@ -423,9 +465,56 @@ pub mod comms {
                     );
                 }
 
-                clob::ws::WsMessage::MarketResolved(resolve) => {
-                    // TODO: try resolve wins from here if possible
+                clob::ws::WsMessage::PriceChange(changes) => {
+                    // println!(
+                    //     "we're getting poly PriceChange update for:{}",
+                    //     changes
+                    //         .price_changes
+                    //         .iter()
+                    //         .map(|v| v.asset_id.to_string())
+                    //         .collect::<Vec<_>>()
+                    //         .join(", ")
+                    // );
 
+                    for change in changes.price_changes {
+                        let best_bid = match models::parse_f32(&change.best_bid) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                tracing::warn!("failed to parse best_bid, skipping: {e}");
+                                continue;
+                            }
+                        };
+
+                        let best_ask = match models::parse_f32(&change.best_ask) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                tracing::warn!("failed to parse best_ask, skipping: {e}");
+                                continue;
+                            }
+                        };
+
+                        let timestamp = match changes.timestamp.parse() {
+                            Ok(v) => v,
+                            Err(e) => {
+                                tracing::warn!("failed to parse timestamp, skipping: {e}");
+                                continue;
+                            }
+                        };
+
+                        self.on_price_update(
+                            models::make_market_key(&change.asset_id, protos::Platform::Polymarket),
+                            models::TopOfBook {
+                                best_bid,
+                                best_ask,
+                                spread: best_ask - best_bid,
+                                tob_timestamp_ms: timestamp,
+                                ..Default::default()
+                            },
+                        );
+                    }
+                }
+
+                clob::ws::WsMessage::MarketResolved(resolve) => {
                     println!("we got a polymarket MarketResolved: {resolve:#?}");
                     for asset_id in resolve.asset_ids {
                         let market_key = make_market_key(&asset_id, protos::Platform::Polymarket);
@@ -450,15 +539,24 @@ pub mod comms {
         fn handle_kalshi_messages(&mut self, msg: KalshiSocketMessage) -> anyhow::Result<()> {
             match msg {
                 KalshiSocketMessage::TickerUpdate(ticker) => {
-                    println!(
-                        "we're getting kalshi TickerUpdate update for:{}",
-                        ticker.msg.market_ticker.as_str()
+                    let market_key = models::make_market_key(
+                        &ticker.msg.market_ticker,
+                        protos::Platform::Kalshi,
                     );
+
+                    if !self.book.registry.contains_key(&market_key) {
+                        return Ok(());
+                    }
+
+                    // println!(
+                    //     "we're getting kalshi TickerUpdate update for: {} yes_bid={} yes_ask={}",
+                    //     ticker.msg.market_ticker,
+                    //     ticker.msg.yes_bid_dollars,
+                    //     ticker.msg.yes_ask_dollars,
+                    // );
+
                     self.on_price_update(
-                        models::make_market_key(
-                            &ticker.msg.market_ticker,
-                            protos::Platform::Kalshi,
-                        ),
+                        market_key,
                         models::TopOfBook {
                             best_bid: models::parse_f32(&ticker.msg.yes_bid_dollars)?,
                             best_ask: models::parse_f32(&ticker.msg.yes_ask_dollars)?,
@@ -473,8 +571,6 @@ pub mod comms {
                 }
 
                 KalshiSocketMessage::MarketLifecycleV2(event) => {
-                    // TODO: try resolve wins from here if possible
-
                     // println!(
                     //     "we got a kalshi MarketLifecycleV2, event_type: {}",
                     //     &event.msg.event_type
@@ -545,69 +641,64 @@ pub mod comms {
         fn unregister_arb(&mut self, cid: &models::CorrelationId) {
             if let Some(watch) = self.book.records.remove(cid) {
                 for key in [&watch.arb.anchor, &watch.arb.r#match] {
+                    // Drop cid from this leg's watcher set; flag if now empty.
                     let should_remove =
                         if let Some(set) = self.book.registry.get_mut(key.market_key.as_str()) {
                             set.remove(cid);
-                            set.is_empty()
+                            set.is_empty() // true → no other arb watches this market
                         } else {
                             false
                         };
 
                     if should_remove {
                         self.book.registry.remove(key.market_key.as_str());
-                        let deleted_tob = self.book.top_of_book.remove(key.market_key.as_str());
+                        self.top_of_book.write().remove(key.market_key.as_str());
 
-                        // ✅ extract owned data BEFORE spawn
-                        let platform = key.platform;
-                        let market_id = key.market_id.clone();
-                        let token_id = key.token_id.clone();
+                        match key.platform {
+                            protos::Platform::Kalshi => {
+                                let kalshi = self.platforms.kalshi().clone();
+                                let token_id = key.token_id.clone();
 
-                        let sid = deleted_tob.and_then(|t| t.sid);
-
-                        // ✅ clone clients (must be Arc or cheap clone)
-                        let kalshi = self.platforms.kalshi().ws_client().clone();
-
-                        let polymarket = self.platforms.polymarket().clone();
-
-                        tokio::spawn(async move {
-                            match platform {
-                                protos::Platform::Kalshi => {
-                                    if let Some(sid) = sid {
-                                        if let Err(e) = kalshi.unsubscribe(vec![sid as u64]).await {
-                                            tracing::error!(
-                                                "Failed background unsubscribe for Kalshi SID {}: {}",
-                                                sid,
-                                                e
-                                            );
-                                        }
+                                tokio::spawn(async move {
+                                    if let Err(e) = kalshi.del_market_ticker(&token_id).await {
+                                        tracing::error!(
+                                            "failed del_market_ticker for kalshi {token_id}: {e}"
+                                        );
                                     } else {
-                                        tracing::debug!(
-                                            "Skipping Kalshi unsubscribe for {}: No SID found.",
-                                            market_id
+                                        tracing::info!(
+                                            "successfully del_market_ticker for kalshi {token_id}"
                                         );
                                     }
-                                }
+                                });
+                            }
 
-                                protos::Platform::Polymarket => {
-                                    if let Err(e) = polymarket
-                                        .unsubscribe_to_market_channel_on_all_ws(vec![token_id])
-                                        .await
+                            protos::Platform::Polymarket => {
+                                let polymarket = self.platforms.polymarket().clone();
+                                let token_id = key.token_id.clone();
+
+                                tokio::spawn(async move {
+                                    if let Err(e) =
+                                        polymarket.del_market_ticker(vec![token_id.clone()]).await
                                     {
                                         tracing::error!(
-                                            "Failed background unsubscribe for Polymarket: {}",
-                                            e
+                                            "Failed background unsubscribe for polymarket: {e}"
                                         );
+                                        return;
                                     }
-                                }
+
+                                    tracing::info!(
+                                        "succesfully unsubcribe for polymark: asset_id {token_id}"
+                                    );
+                                });
                             }
-                        });
+                        }
                     }
                 }
             }
         }
 
         pub fn on_price_update(&mut self, market_key: models::MarketKey, tob: models::TopOfBook) {
-            self.book.top_of_book.insert(market_key.clone(), tob);
+            self.top_of_book.write().insert(market_key.clone(), tob);
 
             if let Some(cids) = self.book.registry.get(&market_key) {
                 for cid in cids {
@@ -621,14 +712,23 @@ pub mod comms {
                 return;
             };
 
-            let anchor_tob = self
-                .book
-                .top_of_book
-                .get(watch.arb.anchor.market_key.as_str());
-            let match_tob = self
-                .book
-                .top_of_book
-                .get(watch.arb.r#match.market_key.as_str());
+            // close-time guard: skip arbs within 10mins of expiry
+            let now = Utc::now();
+            let threshold = now + Duration::minutes(10);
+            let anchor_close = DateTime::from_timestamp_millis(watch.arb.anchor.close_time_ms);
+            let match_close = DateTime::from_timestamp_millis(watch.arb.r#match.close_time_ms);
+            if let (Some(ac), Some(mc)) = (anchor_close, match_close) {
+                if (ac > now && ac <= threshold) || (mc > now && mc <= threshold) {
+                    tracing::warn!(
+                        "evaluate_arb: arb {cid} close_time within 10mins, skipping execution"
+                    );
+                    return;
+                }
+            }
+
+            let tob = self.top_of_book.read();
+            let anchor_tob = tob.get(watch.arb.anchor.market_key.as_str());
+            let match_tob = tob.get(watch.arb.r#match.market_key.as_str());
 
             if let (Some(a_tob), Some(m_tob)) = (anchor_tob, match_tob) {
                 let anchor_best_ask = needed_ask_price(a_tob, &watch.arb.anchor);
@@ -637,20 +737,14 @@ pub mod comms {
                 let total_cost = anchor_best_ask + match_best_ask;
 
                 if total_cost > 0.0 && total_cost < 0.95 {
-                    // let now = chrono::Utc::now().timestamp_millis();
-                    // if (a_tob.timestamp_ms - m_tob.timestamp_ms).abs() > 10 * 60 * 1000
-                    //     || now - a_tob.timestamp_ms > 30 * 60 * 1000
-                    //     || now - m_tob.timestamp_ms > 30 * 60 * 1000
-                    // {
-                    //     return;
-                    // }
-
                     if let Err(e) = self.execution_tx.try_send(models::ExecutionRequest {
                         correlation_id: cid.clone(),
                         anchor: watch.arb.anchor.clone(),
                         r#match: watch.arb.r#match.clone(),
                     }) {
-                        tracing::error!("error sending to picker_execution: {e:#?}");
+                        tracing::warn!(
+                            "evaluate_arb: execution channel full, arb opportunity dropped for {cid}: {e:#?}"
+                        );
                     }
                 }
             }
@@ -678,43 +772,160 @@ pub mod exec {
     use alloy_signer_local::PrivateKeySigner;
     use anyhow::{self, Context};
     use kalshi_rs::portfolio::models::CreateOrderRequest;
+    use parking_lot::Mutex;
     use polymarket_client_sdk::{
         auth::{Normal, state::Authenticated},
-        clob::{self},
+        clob::{
+            self,
+            types::{AssetType, request::BalanceAllowanceRequest},
+        },
     };
     use rust_decimal::prelude::FromStr;
     use rust_decimal::{Decimal, prelude::ToPrimitive};
-    // use std::collections::HashMap;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
     use tracing;
     use uuid::Uuid;
 
-    // #[derive(Debug, Clone)]
-    // pub enum ExecStatus {
-    //     Pending,
-    //     FilledMatched, // Both legs filled the exact same amount
-    //     LeggedHedging, // Mismatched fills, currently placing a sell order for the excess
-    //     Hedged,        // Excess was successfully placed on the order book
-    //     Failed,        // Something went wrong
-    // }
+    // Defaults used when the env vars are absent or invalid
+    const DEFAULT_TRADE_FRACTION: Decimal = Decimal::from_parts(20, 0, 0, false, 2); // 0.20
+    const DEFAULT_MIN_TRADE_SIZE: Decimal = Decimal::from_parts(2, 0, 0, false, 0); // $2
 
-    // #[derive(Debug, Clone)]
-    // pub struct ArbTradeRecord {
-    //     pub req: models::ExecutionRequest,
-    //     pub target_size: u64,
-    //     pub anchor_filled: u64,
-    //     pub match_filled: u64,
-    //     pub status: ExecStatus,
-    // }
+    /// Read a `Decimal` from an env var.
+    /// Empty / whitespace-only / unparseable values all fall back to `default`.
+    /// `TRADE_FRACTION` is clamped to (0, 1). `MIN_TRADE_SIZE` must be > 0.
+    fn parse_env_decimal(key: &str, default: Decimal) -> Decimal {
+        let raw = match std::env::var(key) {
+            Ok(s) if !s.trim().is_empty() => s,
+            _ => {
+                tracing::info!("{key} not set, using default {default}");
+                return default;
+            }
+        };
+
+        match Decimal::from_str(raw.trim()) {
+            Ok(v) if v > Decimal::ZERO && (key != "TRADE_FRACTION" || v < Decimal::ONE) => {
+                tracing::info!("{key}={v} (from env)");
+                v
+            }
+            Ok(v) => {
+                tracing::warn!(
+                    "{key}={v} is out of range (must be > 0{}), using default {default}",
+                    if key == "TRADE_FRACTION" {
+                        " and < 1"
+                    } else {
+                        ""
+                    }
+                );
+                default
+            }
+            Err(e) => {
+                tracing::warn!("{key}={raw:?} could not be parsed ({e}), using default {default}");
+                default
+            }
+        }
+    }
+
+    /// Tracks available capital per platform.
+    ///
+    /// Uses `parking_lot::Mutex<Decimal>` so `deduct_fill` / `set_*` can be called
+    /// from `&self` methods — both `Send + Sync`, safe across tokio::spawn futures.
+    ///
+    /// `trade_fraction` and `min_trade_size` are loaded from env at construction:
+    ///   TRADE_FRACTION  — fraction of the smaller balance per trade (default 0.20)
+    ///   MIN_TRADE_SIZE  — minimum contract count to bother trading   (default 5)
+    #[derive(Debug)]
+    pub struct BalanceTracker {
+        kalshi_usdc: Mutex<Decimal>,
+        polymarket_usdc: Mutex<Decimal>,
+        trade_fraction: Decimal,
+        min_trade_size: Decimal,
+    }
+
+    impl BalanceTracker {
+        pub fn new() -> Self {
+            Self {
+                kalshi_usdc: Mutex::new(Decimal::ZERO),
+                polymarket_usdc: Mutex::new(Decimal::ZERO),
+                trade_fraction: parse_env_decimal("TRADE_FRACTION", DEFAULT_TRADE_FRACTION),
+                min_trade_size: parse_env_decimal("MIN_TRADE_SIZE", DEFAULT_MIN_TRADE_SIZE),
+            }
+        }
+
+        pub fn kalshi(&self) -> Decimal {
+            *self.kalshi_usdc.lock()
+        }
+        pub fn poly(&self) -> Decimal {
+            *self.polymarket_usdc.lock()
+        }
+        pub fn set_kalshi(&self, v: Decimal) {
+            *self.kalshi_usdc.lock() = v;
+        }
+        pub fn set_poly(&self, v: Decimal) {
+            *self.polymarket_usdc.lock() = v;
+        }
+
+        pub fn max_trade_dollars(&self) -> Decimal {
+            let effective = self.kalshi().min(self.poly());
+            let budget = (effective * self.trade_fraction).floor();
+            budget
+        }
+
+        /// Compute execution size (contracts) given prices and market liquidity.
+        ///
+        /// Returns `None` when the total dollar cost of the trade would be below
+        /// `min_trade_size` — keeping the floor in dollars on both sides.
+        pub fn compute_size(
+            &self,
+            anchor_price: Decimal,
+            match_price: Decimal,
+            market_liq: Decimal,
+        ) -> Option<Decimal> {
+            let budget = self.max_trade_dollars();
+            let cost_per_unit = anchor_price + match_price;
+            if cost_per_unit.is_zero() {
+                return None;
+            }
+
+            let size = (budget / cost_per_unit).floor().min(market_liq.floor());
+            let trade_dollars = size * cost_per_unit;
+            if trade_dollars < self.min_trade_size {
+                None
+            } else {
+                Some(size)
+            }
+        }
+
+        /// Deduct the dollar cost of a fill from the correct platform balance.
+        /// Platform-aware: each leg debits its own side.
+        pub fn deduct_fill(
+            &self,
+            anchor_platform: protos::Platform,
+            anchor_price: Decimal,
+            match_platform: protos::Platform,
+            match_price: Decimal,
+            size: Decimal,
+        ) {
+            let deduct = |platform: protos::Platform, price: Decimal| {
+                let cost = price * size;
+                match platform {
+                    protos::Platform::Kalshi => *self.kalshi_usdc.lock() -= cost,
+                    protos::Platform::Polymarket => *self.polymarket_usdc.lock() -= cost,
+                }
+            };
+            deduct(anchor_platform, anchor_price);
+            deduct(match_platform, match_price);
+        }
+    }
 
     pub struct PickerExec {
         platforms: platforms::Platfroms,
         execution_rx: mpsc::Receiver<models::ExecutionRequest>,
         polymarket_clob_client: clob::Client<Authenticated<Normal>>,
-        // trade_state: HashMap<models::CorrelationId, ArbTradeRecord>,
+        balances: BalanceTracker,
         poly_signer: PrivateKeySigner,
         tx: mpsc::Sender<protos::ClientEbo>,
+        top_of_book: super::comms::SharedTob,
     }
 
     impl PickerExec {
@@ -724,22 +935,29 @@ pub mod exec {
             polymarket_clob_client: clob::Client<Authenticated<Normal>>,
             poly_signer: PrivateKeySigner,
             tx: mpsc::Sender<protos::ClientEbo>,
+            top_of_book: super::comms::SharedTob,
         ) -> Self {
             Self {
                 platforms,
                 execution_rx,
-                // trade_state: HashMap::with_capacity(512),
                 polymarket_clob_client,
                 poly_signer,
                 tx,
+                top_of_book,
+                balances: BalanceTracker::new(),
             }
         }
 
         pub async fn run_picker_exe(&mut self, shutdown: CancellationToken) -> anyhow::Result<()> {
+            // Seed balances before we start evaluating any trades
+            if let Err(e) = self.refresh_and_set_balances().await {
+                tracing::warn!("initial balance fetch failed (will retry after first trade): {e}");
+            }
+
             loop {
                 tokio::select! {
                     _ = shutdown.cancelled() => {
-                        tracing::trace!("polymarket received shutdown");
+                        tracing::trace!("picker_exec received shutdown");
                         break;
                     }
 
@@ -752,9 +970,52 @@ pub mod exec {
                         if let Err(e) = self.handle_execution_request(ev_msg).await {
                             tracing::error!("err from handle_execution_request: {e:#?}");
                         }
+
+                        // Re-sync true balances from the exchange after every trade
+                        // (covers fills, partial fills, and any settled hedge sells)
+                        if let Err(e) = self.refresh_and_set_balances().await {
+                            tracing::warn!("post-trade balance refresh failed: {e}");
+                        }
                     }
                 }
             }
+            Ok(())
+        }
+
+        async fn refresh_and_set_balances(&self) -> anyhow::Result<()> {
+            // Kalshi: balance is returned in cents
+            let kalshi_bal = self
+                .platforms
+                .kalshi()
+                .http_client()
+                .get_balance()
+                .await
+                .context("failed to fetch kalshi balance")?;
+            self.balances
+                .set_kalshi(Decimal::from(kalshi_bal.balance) / Decimal::ONE_HUNDRED);
+
+            // Polymarket: USDC collateral balance via CLOB balance-allowance endpoint
+            match self
+                .polymarket_clob_client
+                .balance_allowance(
+                    BalanceAllowanceRequest::builder()
+                        .asset_type(AssetType::Collateral)
+                        .build(),
+                )
+                .await
+            {
+                Ok(resp) => self.balances.set_poly(resp.balance),
+                Err(e) => tracing::warn!(
+                    "polymarket balance fetch failed, keeping last known ${}: {e}",
+                    self.balances.poly()
+                ),
+            }
+
+            tracing::info!(
+                "balances — Kalshi: ${}, Polymarket: ${}",
+                self.balances.kalshi(),
+                self.balances.poly()
+            );
             Ok(())
         }
 
@@ -763,8 +1024,8 @@ pub mod exec {
             req: models::ExecutionRequest,
         ) -> anyhow::Result<()> {
             tracing::info!(
-                "🔍 Fetching live HTTP orderbooks for [{}]",
-                req.correlation_id
+                "reaching handle_execution_request for potential arb: {:?}",
+                &req.correlation_id
             );
 
             let (anchor_metrics, match_metrics) = tokio::try_join!(
@@ -783,6 +1044,11 @@ pub mod exec {
                         "arb for {} gone at execution: total_cost({total_cost})",
                         req.correlation_id,
                     );
+                    // Zero both legs so evaluate_arb stops re-firing on the stale
+                    // WS price until fresh ticks arrive and repopulate the TOB.
+                    let mut tob = self.top_of_book.write();
+                    tob.insert(req.anchor.market_key.clone(), models::TopOfBook::default());
+                    tob.insert(req.r#match.market_key.clone(), models::TopOfBook::default());
                     return Ok(());
                 }
 
@@ -790,6 +1056,9 @@ pub mod exec {
                     tracing::warn!(
                         "Arb total_cost:${total_cost} is to close to 1, not worth it. Aborting."
                     );
+                    let mut tob = self.top_of_book.write();
+                    tob.insert(req.anchor.market_key.clone(), models::TopOfBook::default());
+                    tob.insert(req.r#match.market_key.clone(), models::TopOfBook::default());
                     return Ok(());
                 }
 
@@ -797,15 +1066,24 @@ pub mod exec {
             };
 
             let execution_size = {
-                let execution_size = anchor_size.min(match_size).floor();
-                if execution_size <= Decimal::ONE {
-                    tracing::warn!(
-                        "low liquidity for execution: size({}:{execution_size})",
-                        req.correlation_id,
-                    );
-                    return Ok(());
+                let market_liq = anchor_size.min(match_size);
+                match self
+                    .balances
+                    .compute_size(anchor_price, match_price, market_liq)
+                {
+                    Some(s) => s,
+                    None => {
+                        tracing::warn!(
+                            "arb {} skipped: insufficient balance or below min size \
+                             (kalshi=${}, poly=${}, budget={:?})",
+                            req.correlation_id,
+                            self.balances.kalshi(),
+                            self.balances.poly(),
+                            self.balances.max_trade_dollars(),
+                        );
+                        return Ok(());
+                    }
                 }
-                execution_size
             };
 
             tracing::info!(
@@ -863,6 +1141,17 @@ pub mod exec {
                 )
             };
 
+            // Deduct from the correct platform balance immediately after fills land.
+            // This prevents a second concurrent trade from over-spending while
+            // the post-trade API refresh is still in-flight.
+            self.balances.deduct_fill(
+                req.anchor.platform,
+                anchor_price,
+                req.r#match.platform,
+                match_price,
+                anchor_filled.min(match_filled),
+            );
+
             tracing::info!(
                 "📊 Executed [{}] - Anchor Filled: {}, Match Filled: {}",
                 req.correlation_id,
@@ -872,7 +1161,11 @@ pub mod exec {
 
             if anchor_filled == match_filled {
                 if anchor_filled == Decimal::ZERO {
-                    anyhow::bail!("Missed completely. Both sides filled 0.");
+                    tracing::warn!(
+                        "arb {} missed completely — both sides filled 0 (liquidity vanished)",
+                        req.correlation_id
+                    );
+                    return Ok(());
                 }
 
                 tracing::info!("PERFECT ARB! Both sides filled exactly {}.", anchor_filled);
@@ -1327,7 +1620,8 @@ pub mod exec {
                         .kalshi()
                         .http_client()
                         .get_market_orderbook(&arb.market_id, Some(90))
-                        .await?;
+                        .await
+                        .context("err getting kalshi orderbook")?;
 
                     // Create a perfect 1.0 representation for the Kalshi math
                     let one_dollar = Decimal::ONE;
@@ -1336,7 +1630,7 @@ pub mod exec {
                         // BUYING YES: We trade against the Best NO Bid
                         protos::Leg::Left => {
                             let no_book = ob_response
-                                .orderbook
+                                .orderbook_fp
                                 .no_dollars
                                 .context("Kalshi NO orderbook missing")?;
 
@@ -1356,7 +1650,7 @@ pub mod exec {
                         // BUYING NO: We trade against the Best YES Bid
                         protos::Leg::Right => {
                             let yes_book = ob_response
-                                .orderbook
+                                .orderbook_fp
                                 .yes_dollars
                                 .context("Kalshi YES orderbook missing")?;
 

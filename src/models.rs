@@ -17,7 +17,6 @@ pub mod protos {
     tonic::include_proto!("opon_ifa");
 }
 
-
 impl fmt::Display for protos::Platform {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str_name())
@@ -59,15 +58,6 @@ impl QdrantPointData {
         question_vector.push(' ');
         question_vector.push_str("Possible outcomes: ");
         question_vector.push_str(&market_info.outcome);
-        // question_vector.push_str(" Category: (");
-        // question_vector.push_str(&market_info.market_category);
-
-        // if !market_info.market_subcategory.is_empty() {
-        //     question_vector.push(':');
-        //     question_vector.push_str(&market_info.market_subcategory);
-        // }
-        // question_vector.push(')');
-
         // tracing::info!("question vector --> {question_vector}:{}", market_info.platform);
         Ok(Self {
             id: market_info.uuid.clone(),

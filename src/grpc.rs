@@ -1,9 +1,6 @@
 use crate::models::protos::{self, RunningArbsRequest, client_ebo};
 use anyhow::Context;
-use std::{
-    str::FromStr,
-    time::{self, Duration},
-};
+use std::time::{self, Duration};
 use tokio::{sync::mpsc, time as tokio_time};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
@@ -19,7 +16,20 @@ pub async fn run_grpc_client(
     mut bot_outbound_rx: mpsc::Receiver<protos::ClientEbo>,
     bot_inbound_tx: mpsc::Sender<protos::ServerEbo>,
 ) -> anyhow::Result<()> {
+    // Build endpoint once — URL won't change at runtime and a bad URL
+    // should crash early rather than silently failing on every retry.
+    let grpc_url =
+        std::env::var("GRPC_URL").unwrap_or_else(|_| "http://127.0.0.1:50051".to_string());
+
+    let endpoint = Endpoint::from_shared(grpc_url)
+        .context("grpc_url invalid")?
+        .http2_keep_alive_interval(KEEPALIVE_TIME)
+        .keep_alive_timeout(KEEPALIVE_TIMEOUT)
+        .keep_alive_while_idle(true)
+        .connect_timeout(time::Duration::from_secs(5));
+
     let mut retries = 0;
+    let mut first_connect = true;
 
     loop {
         if shutdown.is_cancelled() {
@@ -31,23 +41,15 @@ pub async fn run_grpc_client(
             retries + 1,
             MAX_RETRIES
         );
-        let grpc_url =
-            std::env::var("GRPC_URL").unwrap_or_else(|_| "http://127.0.0.1:50051".to_string());
 
         let session_start = time::Instant::now();
 
-        let endpoint = Endpoint::from_shared(grpc_url)
-            .context("grpc_url invalid")?
-            .http2_keep_alive_interval(KEEPALIVE_TIME)
-            .keep_alive_timeout(KEEPALIVE_TIMEOUT)
-            .keep_alive_while_idle(true)
-            .connect_timeout(time::Duration::from_secs(5));
-
         let session_result = connect_and_run_session(
-            endpoint,
+            endpoint.clone(),
             shutdown.clone(),
             &mut bot_outbound_rx,
             &bot_inbound_tx,
+            &mut first_connect,
         )
         .await;
 
@@ -84,6 +86,7 @@ async fn connect_and_run_session(
     shutdown: CancellationToken,
     bot_outbound_rx: &mut mpsc::Receiver<protos::ClientEbo>,
     bot_inbound_tx: &mpsc::Sender<protos::ServerEbo>,
+    first_connect: &mut bool,
 ) -> anyhow::Result<()> {
     let channel = endpoint
         .connect()
@@ -101,21 +104,24 @@ async fn connect_and_run_session(
     tracing::info!("gRPC Stream established");
     let mut inbound_stream = response.into_inner();
 
-    let clone_nerwork_tx = network_tx.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(10)).await;
-        if let Err(e) = clone_nerwork_tx
-            .send(protos::ClientEbo {
-                action: Some(client_ebo::Action::GetRunningArbs(RunningArbsRequest {
-                    arb_type: protos::ArbType::CrossPlatform.into(),
-                })),
-                ..Default::default()
-            })
-            .await
-        {
-            tracing::error!("failed to send GetRunningArbs request: {:?}", e);
-        }
-    });
+    if *first_connect {
+        *first_connect = false;
+        let network_tx_clone = network_tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+            if let Err(e) = network_tx_clone
+                .send(protos::ClientEbo {
+                    action: Some(client_ebo::Action::GetRunningArbs(RunningArbsRequest {
+                        arb_type: protos::ArbType::CrossPlatform.into(),
+                    })),
+                    ..Default::default()
+                })
+                .await
+            {
+                tracing::error!("failed to send GetRunningArbs request: {:?}", e);
+            }
+        });
+    }
 
     loop {
         tokio::select! {

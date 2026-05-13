@@ -272,7 +272,7 @@ templ ResolveHitPartial(param TemplateModel[protos.ClientEbo_CrossPlatformHit]) 
 			</div>
 		</section>
 		<section id="picks" class="w-80 h-full min-h-0 border-l border-[#FFFFFF20] bg-[#06001B] flex flex-col">
-			<form hx-post={ templ.SafeURL(fmt.Sprintf("/resolve/hit/submit/%s", param.CorrelationId)) } hx-target="#mainContent" class="flex flex-col h-full min-h-0">
+			<form hx-post={ templ.SafeURL(fmt.Sprintf("/resolve/hit/submit/%s", param.CorrelationId)) } hx-target="#mainContent" hx-push-url="true" class="flex flex-col h-full min-h-0">
 				<div class="p-4 border-b border-[#FFFFFF20] shrink-0">
 					<p class="text-xl font-archivoSemiBold">Selected Picks</p>
 				</div>
