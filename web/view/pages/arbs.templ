@@ -318,17 +318,14 @@ templ JsonDetails(content string) {
 	</pre>
 }
 
-var arbsScriptHandle = templ.NewOnceHandle()
-
 templ arbsFilterAndMultiDeleteScripts() {
-	@arbsScriptHandle.Once() {
-		<style>
+	<style>
 			.loading {
 				filter: blur(2px);
 				pointer-events: none;
 			}
 		</style>
-		<script>
+	<script>
 			// --- FILTER LOGIC ---
 			let currentFilters = {
 				platform: "ALL",
@@ -515,5 +512,4 @@ templ arbsFilterAndMultiDeleteScripts() {
 				true,
 			);
 		</script>
-	}
 }

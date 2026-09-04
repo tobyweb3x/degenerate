@@ -38,5 +38,8 @@ run:
 	docker compose up --build -d
 	docker compose logs -f
 
+rust:
+	@RUSTFLAGS="-Awarnings" cargo run
 
-.PHONY: build run zip 
+go:
+	@cd web && air

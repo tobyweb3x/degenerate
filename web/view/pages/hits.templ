@@ -390,11 +390,8 @@ templ ResolveHitPartial(param TemplateModel[protos.ClientEbo_CrossPlatformHit]) 
 	</div>
 }
 
-var hitScriptHandle = templ.NewOnceHandle()
-
 templ hitsFilterAndMultiDeleteScripts() {
-	@hitScriptHandle.Once() {
-		<script>
+	<script>
 			let multiMode = false;
 
 			function toggleMultiDelete(enable) {
@@ -605,11 +602,10 @@ templ hitsFilterAndMultiDeleteScripts() {
 				if (elPolitics) elPolitics.innerText = counts.politics;
 			}
 		</script>
-		<style>
+	<style>
 			.loading {
 				filter: blur(5px);
 				pointer-events: none;
 			}
 		</style>
-	}
 }

@@ -8,13 +8,18 @@ pub mod comms {
     use kalshi_rs::websocket::models::KalshiSocketMessage;
     use parking_lot::RwLock;
     use polymarket_hft::client::polymarket::clob;
+    use rust_decimal::Decimal;
+    use rust_decimal::prelude::FromPrimitive;
     use std::collections::{HashMap, HashSet};
     use std::sync::Arc;
+    use std::time::{Duration as StdDuration, Instant};
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
     use tracing;
 
     pub type SharedTob = Arc<RwLock<HashMap<models::MarketKey, models::TopOfBook>>>;
+    pub type SharedInflight = Arc<RwLock<HashSet<models::CorrelationId>>>;
+    pub type SharedCooldown = Arc<RwLock<HashMap<models::CorrelationId, Instant>>>;
 
     mod book {
         use std::collections::{HashMap, HashSet};
@@ -82,6 +87,9 @@ pub mod comms {
         ws_rx: mpsc::Receiver<platforms::WsEventMessage>,
         execution_tx: mpsc::Sender<models::ExecutionRequest>,
         top_of_book: SharedTob,
+        in_flight: SharedInflight,
+        cooldown: SharedCooldown,
+        cooldown_duration: StdDuration,
         book: book::Book,
     }
 
@@ -93,7 +101,15 @@ pub mod comms {
             ws_rx: mpsc::Receiver<platforms::WsEventMessage>,
             execution_tx: mpsc::Sender<models::ExecutionRequest>,
             top_of_book: SharedTob,
+            in_flight: SharedInflight,
+            cooldown: SharedCooldown,
         ) -> Self {
+            let cooldown_secs = std::env::var("ARB_COOLDOWN_SECS")
+                .ok()
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .unwrap_or(30);
+            tracing::info!("arb cooldown after failed execution: {cooldown_secs}s");
+
             Self {
                 platforms,
                 rx,
@@ -101,6 +117,9 @@ pub mod comms {
                 ws_rx,
                 execution_tx,
                 top_of_book,
+                in_flight,
+                cooldown,
+                cooldown_duration: StdDuration::from_secs(cooldown_secs),
                 book: book::Book::new(),
             }
         }
@@ -190,9 +209,7 @@ pub mod comms {
 
             Ok(())
         }
-    }
 
-    impl PickerComms {
         async fn find_arb(
             &mut self,
             arb: protos::Arb,
@@ -263,7 +280,7 @@ pub mod comms {
                             continue;
                         };
                         subscribed_count += 1;
-                        tracing::info!("succesfully subscribe for {token_id} on Polymarket")
+                        tracing::info!("[{token_id}:POLY] succesfully subscribe")
                     }
 
                     protos::Platform::Kalshi => {
@@ -271,9 +288,8 @@ pub mod comms {
                             tracing::error!("error add_market_ticker for kalshi {token_id}: {e}");
                             continue;
                         }
-
                         subscribed_count += 1;
-                        tracing::info!("successfully subscribed {token_id} on kalshi")
+                        tracing::info!("[{token_id}:KALSHI] successfully subscribed")
                     }
                 }
             }
@@ -286,10 +302,16 @@ pub mod comms {
                 return Ok(());
             }
 
+            let arb_pair: models::ArbMinifiedInfoPair =
+                arb.try_into().context("error creating arbWatch")?;
+
             self.register_arb(models::ArbWatch {
                 correlation_id,
-                arb: arb.try_into().context("error creating arbWatch")?,
+                arb: arb_pair.clone(),
             });
+
+            self.seed_tob_from_http(&arb_pair.anchor).await;
+            self.seed_tob_from_http(&arb_pair.r#match).await;
 
             Ok(())
         }
@@ -440,26 +462,38 @@ pub mod comms {
                 .await
                 .context("error sending DeleteRunningArbs")
         }
-    }
 
-    impl PickerComms {
         fn handle_poly_messages(&mut self, msg: clob::ws::WsMessage) -> anyhow::Result<()> {
             match msg {
                 clob::ws::WsMessage::BestBidAsk(best) => {
-                    // println!(
-                    //     "we're getting poly BestBidAsk update for:{}",
-                    //     best.asset_id.as_str()
-                    // );
+                    let best_bid = match models::parse_f32(&best.best_bid) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            tracing::warn!("BestBidAsk: failed to parse best_bid, skipping: {e}");
+                            return Ok(());
+                        }
+                    };
+                    let best_ask = match models::parse_f32(&best.best_ask) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            tracing::warn!("BestBidAsk: failed to parse best_ask, skipping: {e}");
+                            return Ok(());
+                        }
+                    };
+                    let tob_timestamp_ms = match best.timestamp.parse() {
+                        Ok(v) => v,
+                        Err(e) => {
+                            tracing::warn!("BestBidAsk: failed to parse timestamp, skipping: {e}");
+                            return Ok(());
+                        }
+                    };
                     self.on_price_update(
                         models::make_market_key(&best.asset_id, protos::Platform::Polymarket),
                         models::TopOfBook {
-                            best_bid: models::parse_f32(&best.best_bid)?,
-                            best_ask: models::parse_f32(&best.best_ask)?,
-                            spread: models::parse_f32(&best.spread)?,
-                            tob_timestamp_ms: best
-                                .timestamp
-                                .parse()
-                                .context("erorr parsing timestamp to i64")?,
+                            best_bid,
+                            best_ask,
+                            spread: best_ask - best_bid,
+                            tob_timestamp_ms,
                             ..Default::default()
                         },
                     );
@@ -548,22 +582,27 @@ pub mod comms {
                         return Ok(());
                     }
 
-                    // println!(
-                    //     "we're getting kalshi TickerUpdate update for: {} yes_bid={} yes_ask={}",
-                    //     ticker.msg.market_ticker,
-                    //     ticker.msg.yes_bid_dollars,
-                    //     ticker.msg.yes_ask_dollars,
-                    // );
+                    // price fields have #[serde(default)] so they're "" when absent —
+                    // skip silently rather than erroring and leaving the TOB stale
+                    let (best_bid, best_ask) = match (
+                        models::parse_f32(&ticker.msg.yes_bid_dollars),
+                        models::parse_f32(&ticker.msg.yes_ask_dollars),
+                    ) {
+                        (Ok(bid), Ok(ask)) => (bid, ask),
+                        _ => return Ok(()),
+                    };
+
+                    let bid_size = models::parse_f32(&ticker.msg.yes_bid_size_fp).unwrap_or(0.0);
+                    let ask_size = models::parse_f32(&ticker.msg.yes_ask_size_fp).unwrap_or(0.0);
 
                     self.on_price_update(
                         market_key,
                         models::TopOfBook {
-                            best_bid: models::parse_f32(&ticker.msg.yes_bid_dollars)?,
-                            best_ask: models::parse_f32(&ticker.msg.yes_ask_dollars)?,
-                            bid_size: models::parse_f32(&ticker.msg.yes_bid_size_fp)?,
-                            ask_size: models::parse_f32(&ticker.msg.yes_ask_size_fp)?,
-                            spread: models::parse_f32(&ticker.msg.yes_ask_dollars)?
-                                - models::parse_f32(&ticker.msg.yes_bid_dollars)?,
+                            best_bid,
+                            best_ask,
+                            bid_size,
+                            ask_size,
+                            spread: best_ask - best_bid,
                             tob_timestamp_ms: ticker.msg.ts * 1_000,
                             sid: Some(ticker.sid),
                         },
@@ -697,7 +736,147 @@ pub mod comms {
             }
         }
 
+        async fn seed_tob_from_http(&mut self, leg: &models::ArbMinifiedInfo) {
+            let tob = match leg.platform {
+                protos::Platform::Polymarket => {
+                    let summary = match self
+                        .platforms
+                        .polymarket()
+                        .get_order_book(&leg.token_id)
+                        .await
+                    {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::warn!(
+                                "[http-seed:POLY] {} order book failed: {e}",
+                                leg.token_id
+                            );
+                            return;
+                        }
+                    };
+
+                    // asks: lowest first per docs → first = best ask (required to proceed)
+                    // bids: highest first per docs → first = best bid (nice to have, default 0.0)
+                    let Some(best_ask) = summary
+                        .asks
+                        .first()
+                        .and_then(|l| l.price.parse::<f32>().ok())
+                    else {
+                        tracing::warn!("[http-seed:POLY] {} asks empty — skipping", leg.token_id);
+                        return;
+                    };
+
+                    let best_bid = summary
+                        .bids
+                        .first()
+                        .and_then(|l| l.price.parse::<f32>().ok())
+                        .unwrap_or(0.0);
+
+                    // Use the orderbook's own timestamp so it sits in the same
+                    // time domain as the WS BestBidAsk/PriceChange timestamps.
+                    let tob_timestamp_ms = summary
+                        .timestamp
+                        .parse::<i64>()
+                        .unwrap_or_else(|_| chrono::Utc::now().timestamp_millis());
+
+                    tracing::info!("[http-seed:POLY:{}] ask={best_ask:.4}", leg.market_key);
+                    models::TopOfBook {
+                        best_ask,
+                        best_bid,
+                        spread: best_ask - best_bid,
+                        tob_timestamp_ms,
+                        ..Default::default()
+                    }
+                }
+
+                protos::Platform::Kalshi => {
+                    let ob = match self
+                        .platforms
+                        .kalshi()
+                        .http_client()
+                        .get_market_orderbook(&leg.market_id, Some(90))
+                        .await
+                    {
+                        Ok(r) => r,
+                        Err(e) => {
+                            tracing::warn!(
+                                "[http-seed:KALSHI] {} order book failed: {e}",
+                                leg.market_id
+                            );
+                            return;
+                        }
+                    };
+
+                    // YES ask = 1 − best_NO_bid  (required — cheapest way to buy YES)
+                    // YES bid = best_YES_bid      (optional — only needed for Right/NO leg eval)
+                    // Both Kalshi books are sorted ascending → last = highest (best) bid.
+                    let Some(yes_ask) = ob
+                        .orderbook_fp
+                        .no_dollars
+                        .as_deref()
+                        .and_then(|v| v.last())
+                        .and_then(|(p, _)| p.parse::<f32>().ok())
+                        .map(|no_bid| 1.0_f32 - no_bid)
+                    else {
+                        tracing::warn!(
+                            "[http-seed:KALSHI] {} NO book empty — skipping",
+                            leg.market_id
+                        );
+                        return;
+                    };
+
+                    let yes_bid = ob
+                        .orderbook_fp
+                        .yes_dollars
+                        .as_deref()
+                        .and_then(|v| v.last())
+                        .and_then(|(p, _)| p.parse::<f32>().ok())
+                        .unwrap_or(0.0);
+
+                    tracing::info!("[http-seed:KALSHI:{}] ask={yes_ask:.4}", leg.market_key);
+                    models::TopOfBook {
+                        best_ask: yes_ask,
+                        best_bid: yes_bid,
+                        spread: yes_ask - yes_bid,
+                        tob_timestamp_ms: chrono::Utc::now().timestamp_millis(),
+                        ..Default::default()
+                    }
+                }
+            };
+
+            self.on_price_update(leg.market_key.clone(), tob);
+        }
+
         pub fn on_price_update(&mut self, market_key: models::MarketKey, tob: models::TopOfBook) {
+            let now_ms = chrono::Utc::now().timestamp_millis();
+
+            {
+                let guard = self.top_of_book.read();
+                if let Some(existing) = guard.get(&market_key) {
+                    if tob.tob_timestamp_ms <= existing.tob_timestamp_ms {
+                        let stale_by_secs =
+                            (existing.tob_timestamp_ms - tob.tob_timestamp_ms) as f64 / 1_000.0;
+                        // tracing::warn!(
+                        //     "[{}:tob STALE dropped] stale_by={:.1}s",
+                        //     market_key,
+                        //     stale_by_secs,
+                        // );
+                        return;
+                    }
+
+                    let gap_secs =
+                        (tob.tob_timestamp_ms - existing.tob_timestamp_ms) as f64 / 1_000.0;
+                    let age_secs = (now_ms - tob.tob_timestamp_ms) as f64 / 1_000.0;
+                    // tracing::info!(
+                    //     "[{}:tob update] gap={:.1}s ago={:.1}s ask={:.4}",
+                    //     market_key,
+                    //     gap_secs,
+                    //     age_secs,
+                    //     tob.best_ask,
+                    // );
+                }
+            }
+
             self.top_of_book.write().insert(market_key.clone(), tob);
 
             if let Some(cids) = self.book.registry.get(&market_key) {
@@ -708,6 +887,22 @@ pub mod comms {
         }
 
         fn evaluate_arb(&self, cid: &models::CorrelationId) {
+            if self.in_flight.read().contains(cid) {
+                return;
+            }
+
+            // cooldown: skip arbs that recently failed at execution
+            {
+                let guard = self.cooldown.read();
+                if let Some(&cooled_at) = guard.get(cid) {
+                    if cooled_at.elapsed() < self.cooldown_duration {
+                        return;
+                    }
+                    drop(guard);
+                    self.cooldown.write().remove(cid);
+                }
+            }
+
             let Some(watch) = self.book.records.get(cid) else {
                 return;
             };
@@ -737,14 +932,30 @@ pub mod comms {
                 let total_cost = anchor_best_ask + match_best_ask;
 
                 if total_cost > 0.0 && total_cost < 0.95 {
+                    let anchor_ws_price =
+                        Decimal::from_f32(anchor_best_ask).unwrap_or(Decimal::ZERO);
+                    let match_ws_price = Decimal::from_f32(match_best_ask).unwrap_or(Decimal::ZERO);
+                    let anchor_ws_size =
+                        Decimal::from_f32(needed_ask_size(a_tob, &watch.arb.anchor))
+                            .unwrap_or(Decimal::ZERO);
+                    let match_ws_size =
+                        Decimal::from_f32(needed_ask_size(m_tob, &watch.arb.r#match))
+                            .unwrap_or(Decimal::ZERO);
+
                     if let Err(e) = self.execution_tx.try_send(models::ExecutionRequest {
                         correlation_id: cid.clone(),
                         anchor: watch.arb.anchor.clone(),
                         r#match: watch.arb.r#match.clone(),
+                        anchor_ws_price,
+                        match_ws_price,
+                        anchor_ws_size,
+                        match_ws_size,
                     }) {
                         tracing::warn!(
                             "evaluate_arb: execution channel full, arb opportunity dropped for {cid}: {e:#?}"
                         );
+                    } else {
+                        self.in_flight.write().insert(cid.clone());
                     }
                 }
             }
@@ -759,6 +970,16 @@ pub mod comms {
             },
 
             protos::Platform::Polymarket => tob.best_ask,
+        }
+    }
+
+    fn needed_ask_size(tob: &models::TopOfBook, arb: &models::ArbMinifiedInfo) -> f32 {
+        match arb.platform {
+            protos::Platform::Kalshi => match arb.leg {
+                protos::Leg::Left => tob.ask_size,
+                protos::Leg::Right => tob.bid_size,
+            },
+            protos::Platform::Polymarket => tob.ask_size,
         }
     }
 }
@@ -782,6 +1003,7 @@ pub mod exec {
     };
     use rust_decimal::prelude::FromStr;
     use rust_decimal::{Decimal, prelude::ToPrimitive};
+    use std::time::Instant;
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
     use tracing;
@@ -926,6 +1148,9 @@ pub mod exec {
         poly_signer: PrivateKeySigner,
         tx: mpsc::Sender<protos::ClientEbo>,
         top_of_book: super::comms::SharedTob,
+        in_flight: super::comms::SharedInflight,
+        cooldown: super::comms::SharedCooldown,
+        optimistic: bool,
     }
 
     impl PickerExec {
@@ -936,6 +1161,9 @@ pub mod exec {
             poly_signer: PrivateKeySigner,
             tx: mpsc::Sender<protos::ClientEbo>,
             top_of_book: super::comms::SharedTob,
+            in_flight: super::comms::SharedInflight,
+            cooldown: super::comms::SharedCooldown,
+            optimistic: bool,
         ) -> Self {
             Self {
                 platforms,
@@ -944,6 +1172,9 @@ pub mod exec {
                 poly_signer,
                 tx,
                 top_of_book,
+                in_flight,
+                cooldown,
+                optimistic,
                 balances: BalanceTracker::new(),
             }
         }
@@ -1024,41 +1255,72 @@ pub mod exec {
             req: models::ExecutionRequest,
         ) -> anyhow::Result<()> {
             tracing::info!(
-                "reaching handle_execution_request for potential arb: {:?}",
-                &req.correlation_id
+                "[{}] from tob ({}) | anchor: ({:?} ws_price={}) | match: ({:?} ws_price={})",
+                req.correlation_id,
+                if self.optimistic {
+                    "optimistic"
+                } else {
+                    "http"
+                },
+                req.anchor.platform,
+                req.anchor_ws_price,
+                req.r#match.platform,
+                req.match_ws_price,
             );
 
-            let (anchor_metrics, match_metrics) = tokio::try_join!(
-                self.get_execution_metrics_from_http(req.anchor.clone()),
-                self.get_execution_metrics_from_http(req.r#match.clone())
-            )
-            .context("Failed to fetch HTTP execution metrics")?;
-
-            let (anchor_price, anchor_size) = anchor_metrics;
-            let (match_price, match_size) = match_metrics;
+            let (anchor_price, anchor_size, match_price, match_size) = if self.optimistic {
+                (
+                    req.anchor_ws_price,
+                    req.anchor_ws_size,
+                    req.match_ws_price,
+                    req.match_ws_size,
+                )
+            } else {
+                let (anchor_metrics, match_metrics) = match tokio::try_join!(
+                    self.get_execution_metrics_from_http(req.anchor.clone()),
+                    self.get_execution_metrics_from_http(req.r#match.clone())
+                ) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        self.in_flight.write().remove(&req.correlation_id);
+                        return Err(e).context("Failed to fetch HTTP execution metrics");
+                    }
+                };
+                tracing::info!(
+                    "[{}] from http | anchor: (price={}, size={}) | match: (price={}, size={})",
+                    req.correlation_id,
+                    anchor_metrics.0,
+                    anchor_metrics.1,
+                    match_metrics.0,
+                    match_metrics.1,
+                );
+                (
+                    anchor_metrics.0,
+                    anchor_metrics.1,
+                    match_metrics.0,
+                    match_metrics.1,
+                )
+            };
 
             let total_cost = {
                 let total_cost = anchor_price + match_price;
-                if total_cost >= Decimal::ONE {
-                    tracing::warn!(
-                        "arb for {} gone at execution: total_cost({total_cost})",
-                        req.correlation_id,
-                    );
-                    // Zero both legs so evaluate_arb stops re-firing on the stale
-                    // WS price until fresh ticks arrive and repopulate the TOB.
-                    let mut tob = self.top_of_book.write();
-                    tob.insert(req.anchor.market_key.clone(), models::TopOfBook::default());
-                    tob.insert(req.r#match.market_key.clone(), models::TopOfBook::default());
-                    return Ok(());
-                }
+                if total_cost <= Decimal::ZERO || total_cost > Decimal::new(985, 3) {
+                    if total_cost >= Decimal::ONE {
+                        tracing::warn!(
+                            "[{}] gone at execution: total_cost({total_cost}): anchor_{anchor_price} + match_{match_price} — cooling down",
+                            req.correlation_id
+                        );
+                        self.cooldown
+                            .write()
+                            .insert(req.correlation_id.clone(), Instant::now());
+                    } else {
+                        tracing::warn!(
+                            "arb for {} too close to 1, not worth it: total_cost({total_cost})",
+                            req.correlation_id
+                        );
+                    }
 
-                if !(total_cost > Decimal::ZERO && total_cost <= Decimal::new(985, 3)) {
-                    tracing::warn!(
-                        "Arb total_cost:${total_cost} is to close to 1, not worth it. Aborting."
-                    );
-                    let mut tob = self.top_of_book.write();
-                    tob.insert(req.anchor.market_key.clone(), models::TopOfBook::default());
-                    tob.insert(req.r#match.market_key.clone(), models::TopOfBook::default());
+                    self.in_flight.write().remove(&req.correlation_id);
                     return Ok(());
                 }
 
@@ -1081,6 +1343,7 @@ pub mod exec {
                             self.balances.poly(),
                             self.balances.max_trade_dollars(),
                         );
+                        self.in_flight.write().remove(&req.correlation_id);
                         return Ok(());
                     }
                 }
@@ -1162,13 +1425,18 @@ pub mod exec {
             if anchor_filled == match_filled {
                 if anchor_filled == Decimal::ZERO {
                     tracing::warn!(
-                        "arb {} missed completely — both sides filled 0 (liquidity vanished)",
+                        "arb {} missed completely — both sides filled 0 (liquidity vanished) — cooling down",
                         req.correlation_id
                     );
+                    self.cooldown
+                        .write()
+                        .insert(req.correlation_id.clone(), Instant::now());
+                    self.in_flight.write().remove(&req.correlation_id);
                     return Ok(());
                 }
 
                 tracing::info!("PERFECT ARB! Both sides filled exactly {}.", anchor_filled);
+                self.in_flight.write().remove(&req.correlation_id);
                 return self
                     .tx
                     .send(protos::ClientEbo {
@@ -1329,6 +1597,7 @@ pub mod exec {
                 tokio::join!(send_order_task, hedge_task);
             }
 
+            self.in_flight.write().remove(&req.correlation_id);
             Ok(())
         }
 

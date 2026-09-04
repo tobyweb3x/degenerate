@@ -21,12 +21,16 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<AppRuntime> {
     let (ws_tx, ws_rx) = mpsc::channel::<platforms::WsEventMessage>(1_024);
     let (execution_tx, execution_rx) = mpsc::channel(1_024);
     let top_of_book = picker::comms::SharedTob::default();
+    let in_flight = picker::comms::SharedInflight::default();
+    let cooldown = picker::comms::SharedCooldown::default();
 
     // vectore store
     let (vector_store, vector_store_cleanup_handle) = {
         let vector_store = vector_store::VectorStore::new_auto(
             std::env::var("QDRANT_URL")
-                .unwrap_or_else(|_| "http://localhost:6334".to_string())
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| "http://localhost:6334".to_string())
                 .as_str(),
             vector_store::COLLECTION_NAME,
         )
@@ -76,6 +80,8 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<AppRuntime> {
         let clone_bot_to_grpc_tx = bot_to_grpc_tx.clone();
         let platform = platform.clone();
         let top_of_book = top_of_book.clone();
+        let in_flight = in_flight.clone();
+        let cooldown = cooldown.clone();
         async move {
             let mut picker = picker::comms::PickerComms::new(
                 platform,
@@ -84,6 +90,8 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<AppRuntime> {
                 ws_rx,
                 execution_tx,
                 top_of_book,
+                in_flight,
+                cooldown,
             );
             picker.run_picker_comms(picker_comms_shutdown).await
         }
@@ -104,6 +112,12 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<AppRuntime> {
                 .authenticate()
                 .await?;
 
+        let optimistic = std::env::var("EXEC_MODE")
+            .map(|v| v.eq_ignore_ascii_case("optimistic"))
+            .unwrap_or(false);
+
+        tracing::info!("execution mode: {}", if optimistic { "optimistic (WS prices)" } else { "http (order book)" });
+
         async move {
             let mut picker = picker::exec::PickerExec::new(
                 platform,
@@ -112,6 +126,9 @@ pub async fn app_startup(shutdown: CancellationToken) -> Result<AppRuntime> {
                 signer,
                 bot_to_grpc_tx,
                 top_of_book,
+                in_flight,
+                cooldown,
+                optimistic,
             );
             picker.run_picker_exe(picker_exec_shutdown).await
         }

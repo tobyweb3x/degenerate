@@ -108,7 +108,7 @@ async fn connect_and_run_session(
         *first_connect = false;
         let network_tx_clone = network_tx.clone();
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(10)).await;
+            tokio::time::sleep(Duration::from_secs(30)).await;
             if let Err(e) = network_tx_clone
                 .send(protos::ClientEbo {
                     action: Some(client_ebo::Action::GetRunningArbs(RunningArbsRequest {

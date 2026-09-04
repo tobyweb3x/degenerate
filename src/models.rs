@@ -661,6 +661,10 @@ pub struct ExecutionRequest {
     pub correlation_id: CorrelationId,
     pub anchor: ArbMinifiedInfo,
     pub r#match: ArbMinifiedInfo,
+    pub anchor_ws_price: Decimal,
+    pub match_ws_price: Decimal,
+    pub anchor_ws_size: Decimal,
+    pub match_ws_size: Decimal,
 }
 
 pub fn str_to_decimal(value: &str) -> anyhow::Result<Decimal> {

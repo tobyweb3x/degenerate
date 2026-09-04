@@ -123,10 +123,7 @@ impl MyPolymarketClient {
         Ok(())
     }
 
-    pub async fn del_market_ticker(
-        &self,
-        asset_ids: Vec<String>,
-    ) -> anyhow::Result<()> {
+    pub async fn del_market_ticker(&self, asset_ids: Vec<String>) -> anyhow::Result<()> {
         let asset_ids: Vec<String> = asset_ids
             .into_iter()
             .filter(|id| self.is_asset_subscribed(id))
@@ -148,11 +145,10 @@ impl MyPolymarketClient {
             .await
             .map_err(anyhow::Error::from)?;
 
-        let mut map = self.inner.subscribed_assets.write();
         asset_ids.iter().for_each(|id| {
-            map.remove(id.as_str());
+            self.remove_subscribed_asset(id);
         });
-
+        
         Ok(())
     }
 
